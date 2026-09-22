@@ -1,0 +1,74 @@
+# Reverse engineered names for MDKD3D.EXE (see ApplyNames.java for the format).
+
+# C runtime (Watcom)
+func 0x479511 sprintf
+func 0x4793c0 memset
+func 0x47a40f fread
+func 0x47a2a6 fseek
+func 0x479532 fclose
+func 0x43a040 str_equal_nocase
+func 0x43a070 strn_equal_nocase
+
+# Memory and errors
+func 0x4251b4 mem_alloc
+func 0x424de0 mem_free
+func 0x40a2d0 fatal_error
+func 0x40a394 fatal_open_error
+func 0x40a404 fatal_read_error
+
+# Files
+func 0x423d70 file_open
+func 0x42e4ec file_load_whole
+func 0x42e578 file_load_whole_with_size
+
+# Level loading
+func 0x41b0c0 level_load
+note 0x41b0c0 Loads LEVELnS.MTI, TRAVSPRT.BNI, LEVELn.CMI, LEVELn.DTI and opens LEVELnO.MTO, then sets up the palette, sky, arenas (DTI block 2) and HUD sprites.
+func 0x41accc level_load_sounds
+func 0x422edc mti_load
+func 0x404578 bni_load
+func 0x422bbc loading_progress
+data 0x574aec g_dti
+data 0x574b2c g_cmi
+data 0x574ae8 g_base_palette
+data 0x573b90 g_arena_palette_count
+data 0x574ae0 g_arenas
+data 0x574ad8 g_arena_count
+
+# Arenas (MTO "overlays", streamed in 32 KiB chunks)
+func 0x4232bc mto_open
+func 0x423380 mto_alloc_arena_buffer
+func 0x423420 mto_close
+func 0x423448 mto_begin_arena
+func 0x423540 mto_load_arena_chunk
+func 0x4235b4 mto_arena_buffer
+func 0x41970c arena_switch
+func 0x41983c arena_load_step
+note 0x41983c After the arena is loaded: palette indices 64-175 <- arena palette (section B), registers the arena textures, starts arena sounds (section A).
+func 0x4194e4 arena_activate
+func 0x422900 arena_parse_world
+note 0x422900 Section C: material names (10 bytes each, padded to 4), BSP nodes (44 bytes), triangles (36 bytes), vertices (12 bytes).
+func 0x423284 arena_register_textures
+func 0x422c00 texture_archive_register
+func 0x43da80 cmi_find_arena_script
+data 0x57ec38 g_mto_file
+data 0x57ec3c g_mto_directory
+data 0x57ec2c g_mto_arena_count
+data 0x57ec30 g_arena_buffer
+data 0x573af4 g_current_arena
+
+# Palette
+func 0x474894 set_palette
+func 0x4709d8 set_palette_range
+
+# Sky
+func 0x474694 sky_setup
+func 0x475b4c sky_draw
+note 0x475b4c 2D backdrop blit: x scrolls with yaw (wrap width pixels for 360 degrees), y with pitch (horizon row at eye level); fills above/below with the DTI top/bottom colors.
+data 0x574b28 g_sky_pixels
+data 0x5991e0 g_sky_wrap_width
+data 0x5991e4 g_sky_height
+data 0x59920c g_sky_horizon_row
+data 0x599210 g_sky_offset
+data 0x5991f0 g_sky_top_color
+data 0x599200 g_sky_bottom_color

@@ -1,0 +1,23 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/level_viewer.gd" id="1_viewer"]
+[ext_resource type="Script" path="res://game/free_camera.gd" id="2_camera"]
+
+[node name="LevelViewer" type="Node3D"]
+script = ExtResource("1_viewer")
+
+[node name="Camera" type="Camera3D" parent="."]
+physics_interpolation_mode = 2
+fov = 70.0
+near = 0.5
+far = 20000.0
+script = ExtResource("2_camera")
+
+[node name="Info" type="Label" parent="."]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 632.0
+offset_bottom = 80.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+text = "Loading…"
