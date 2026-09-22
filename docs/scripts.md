@@ -81,14 +81,46 @@ conditions such as `if_anim_done` test their state. See [engine.md](engine.md#ob
   decodes every script like the Python disassembler.
 - [`MDKScriptVM`](../game/scripts/script_vm.gd) runs a frame of an object's script like
   `script_run`. Opcodes that aren't implemented yet are still decoded (so scripts never lose sync)
-  and their conditions are false; `--profile` lists the ones that were hit.
+  and their conditions are false; `--profile` lists the ones that were hit. The levels use 236
+  opcodes; 34 aren't implemented yet, mostly effects (`attach_effect`, lights, debris), HUD
+  (`hud_message`, `boss_bar`), fans and wind, chains and cutscene events.
+- Each object's target is chosen when its script runs (`script_run`): Kurt, or the walking decoy
+  (`0x573c20`), or the aliens' target set by `set_target_mode` 1 (`0x491e48`), unless the object has
+  target mode 2 (always Kurt).
+- Group hit scripts run in a scratch object per arena (the original's `0x57fc40`), see
+  [engine.md](engine.md#group-hits-0x40d560).
 - [`MDKScriptRuntime`](../game/scripts/script_runtime.gd) runs the scripts at 30 Hz: the arena
   script of Kurt's arena, the DTI aliens spawned when Kurt first enters an arena, and the objects of
   that arena; [`MDKObjectMotion`](../game/scripts/object_motion.gd) moves them like the engine.
+
+## Findings about opcodes
+
+- Opcode 41 (`set_targetable`) sets flag 0x100, the platform flag Kurt stands on (and 0x800000
+  with mode 2); when cleared while Kurt stands on the object, he's let go (`0x573b84`).
+- `wait_anim_frame` (154) makes itself the restart point: the script resumes there every frame
+  until the animation reaches the frame (32767 = its end), then goes on.
+- `touch_damage` (158, 0x45cf60) hurts Kurt once per visible part touching him, and other objects
+  (not flags 0x820) touching its box with hit event −3 and hit type −4; with flags bit 0 the
+  object dies when it hits, with bit 1 the script jumps to the target.
+- `explode` (184) blasts with every target bit (−1), hit type −5, not counting kills (group hit
+  kind 4); `explosion_damage` (178) uses its flags as targets and counts kills.
+- `push_kurt` (248) knocks Kurt down (state 901) unless he's already down (priority ≥ 9) or hangs
+  (state 800); the push is `a × frame time` added to `0x573c08`, a displacement per tick, and it
+  stops firing.
+- `if_kurt_looks_at_me` (87, 0x460730): the cone around Kurt's yaw narrows linearly from 90° at
+  distance 0 to `cone` at `max_range`; the line of sight goes from Kurt's z + 5 to the object's z + 2.
+- `find_object` (245) mode 2 looks for Kurt's items (flag 0x1000): level 5's `XGUNTAM` uses it to
+  go and eat thrown seals and bones.
+- `hud_message` (247, 0x425400) queues a text of `MDKFONT.FTI` (e.g. `MU5_INI`) in a 4-entry queue
+  (`0x57ecf0`, 12 bytes each: time, flags, text; flags & 2 = in front); 0x425474 shows it in one or
+  two lines (`\n`), fading.
+- The alarm (movement command 15) plays `ALERT` every 32 frames and keeps `0x573aec` at 10 ticks
+  (`if_alarm`).
 
 ## Data bugs in the original
 
 - LEVEL3 `HMO_9`'s arena script starts with the invalid opcode 141, so it stops immediately.
 - 8 of the 11 uses of opcode 250 (`if_in_box`, in LEVEL7 `DANT_6`) have an empty Z range and can
   never be true.
-- Opcodes 182/183 (jump tables) don't advance through the table, so they always jump to entry 1.
+- Opcode 182 (`switch_goto`, unused by the levels) doesn't advance through its table, so it always
+  jumps to entry 1. Opcode 183 (`switch_gosub`) does it right.

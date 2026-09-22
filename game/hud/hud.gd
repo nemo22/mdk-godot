@@ -84,6 +84,8 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	elif kurt.hurt_flash > 0.0:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 0, 0, kurt.hurt_flash / 255.0 * 0.4))
+	if kurt.white_flash > 0.0:
+		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, minf(kurt.white_flash / 255.0, 1.0)))
 	var s := _scale()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
 	var view := size / s

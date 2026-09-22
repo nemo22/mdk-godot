@@ -16,6 +16,8 @@ class TriangleGroup:
 	var shape: CollisionShape3D
 	## `TRIANGLE_HIDDEN` and `TRIANGLE_NOT_SOLID`.
 	var flags := 0
+	## Centres of the triangles (MDK coordinates), computed when a blast needs them.
+	var centers := PackedVector3Array()
 
 
 var number := 0
@@ -138,6 +140,21 @@ func set_group_state(arena_name: String, group_number: int, op: int) -> void:
 			group.flags &= ~(TRIANGLE_HIDDEN | TRIANGLE_NOT_SOLID)
 	group.mesh.visible = not group.flags & TRIANGLE_HIDDEN
 	group.shape.set_deferred(&"disabled", group.flags & TRIANGLE_NOT_SOLID != 0)
+
+
+## Centres of the triangles of a group (MDK coordinates), for blasts (0x463a94). Empty when the
+## group doesn't exist or isn't solid.
+func get_group_centers(arena_name: String, group_number: int) -> PackedVector3Array:
+	var group: TriangleGroup = arena_groups.get(arena_name, {}).get(group_number)
+	if not group or group.flags & TRIANGLE_NOT_SOLID:
+		return PackedVector3Array()
+	if group.centers.is_empty():
+		var arena: MDKArena = _arenas[arena_name]
+		for tri in group.triangles:
+			var i := tri * 3
+			group.centers.push_back((arena.vertices[arena.triangle_indices[i]] + arena.vertices[arena.triangle_indices[i + 1]]
+					+ arena.vertices[arena.triangle_indices[i + 2]]) / 3.0)
+	return group.centers
 
 
 ## Gives every triangle of a group the material `value` (`group_set_texture`).

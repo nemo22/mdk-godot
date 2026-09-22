@@ -70,6 +70,8 @@ var leader: MDKObject
 var dead := false
 ## Mask of hidden model parts (`obj+0x2c8`).
 var hidden_parts := 0
+## Parts blown off (`obj+0x2cc`, opcode 129): `clear_parts_mask` doesn't show them again.
+var locked_parts := 0
 
 # Script state.
 ## Restart point (absolute file offset in the CMI, 0 = no script).
@@ -98,6 +100,11 @@ var part_health: Array[int] = []
 var part_max_health: Array[int] = []
 ## Command priority and obey level (`obj+0x11a`, `obj+0x11b`).
 var priority := 0
+## Target mode (`obj+7`, opcode 251): 1 the aliens' target, 2 always targets Kurt.
+var target_mode := 0
+## Values of opcodes 210 and 199 (`obj+0x2c0`, `obj+0x104`), not identified.
+var value_2c0 := 0.0
+var value_104 := 0.0
 var obey_level := 0
 
 # Movement state.
@@ -140,6 +147,8 @@ var path_yaw_offset := 0.0
 var animation: MDKModelAnimation
 var animation_time := 0.0
 var animation_frame := 0
+## Frames per second of the animation (`obj+0xe0`, `anim_fps`).
+var animation_fps := ANIMATION_FPS
 ## Sound played when the animation reaches a frame (`set_id_and_name`: `obj+0x140`, `obj+0x144`).
 var frame_sound := ""
 var frame_sound_frame := 0
@@ -197,9 +206,11 @@ func setup(p_type_name: String, p_model: MDKModel, resolver: MDKMeshBuilder.Mate
 	name = p_type_name
 	model = p_model
 	_resolver = resolver
+	# The model can change later (the nuke).
 	if model:
-		_mesh_instance = MeshInstance3D.new()
-		add_child(_mesh_instance)
+		if not _mesh_instance:
+			_mesh_instance = MeshInstance3D.new()
+			add_child(_mesh_instance)
 		_update_mesh()
 
 
@@ -256,7 +267,7 @@ func advance_animation(delta: float) -> void:
 	if animation_end_frame >= 0 and animation_frame == animation_end_frame:
 		return
 	var frame_count := animation.frame_count
-	animation_time += delta * ANIMATION_FPS * animation.speed
+	animation_time += delta * animation_fps * animation.speed
 	if animation_end_frame >= 0 and animation_frame < animation_end_frame and roundi(animation_time) >= animation_end_frame:
 		animation_time = animation_end_frame
 	if animation_time >= frame_count - 1:

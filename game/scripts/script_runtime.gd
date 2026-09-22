@@ -21,6 +21,8 @@ const LEVEL_LAYER := 1
 class ArenaState:
 	var name := ""
 	var controller: MDKObject
+	## The object group hit scripts run in (the original's scratch object `0x57fc40`).
+	var hit_scripts: MDKObject
 	var variables := [0.0, 0.0, 0.0, 0.0]
 	var flags := 0
 	var started := false
@@ -51,6 +53,14 @@ var target_position := Vector3()
 ## Yaw of the target and of Kurt (degrees, MDK convention).
 var target_yaw := 0.0
 var kurt_yaw := 0.0
+## The object aliens aim at instead of Kurt (`0x491e48`, `set_target_mode` 1).
+var alien_target: MDKObject
+## Ticks the alarm keeps sounding (`0x573aec`), set by objects with movement command 15.
+var alarm_ticks := 0
+## A count the scripts keep (`0x573c4c`, opcode 217), shown after the level.
+var global_573c4c := 0
+## How the sky is drawn (`0x574304`, opcode 202): 0 normally.
+var sky_mode := 0
 ## Option toggled by cheat codes (`if_option`, the original's `0x5742dc`), 1 by default.
 var option := 1
 var current_arena := ""
@@ -86,6 +96,9 @@ func get_arena_state(arena_name: String) -> ArenaState:
 		state.controller.name = "Arena_" + arena_name
 		state.controller.arena = arena_name
 		state.controller.restart = level.cmi.arena_scripts.get(arena_name, 0)
+		state.hit_scripts = MDKObject.new()
+		state.hit_scripts.name = "HitScripts_" + arena_name
+		state.hit_scripts.arena = arena_name
 		_arenas[arena_name] = state
 	return _arenas[arena_name]
 
@@ -93,11 +106,47 @@ func get_arena_state(arena_name: String) -> ArenaState:
 func _exit_tree() -> void:
 	if motion:
 		motion.free_probe()
+	for state: ArenaState in _arenas.values():
+		state.controller.free()
+		state.hit_scripts.free()
 
 
 ## Group of the floor triangle below Kurt (`0x573c10`).
 func get_kurt_floor_group() -> int:
 	return level.get_floor_group(kurt.global_position, [kurt.get_rid()])
+
+
+## The target of an object's script (`script_run`): Kurt, or the decoy while it walks, or the
+## aliens' target (opcode 251), unless the object always targets Kurt.
+func select_target(obj: MDKObject) -> void:
+	target_position = kurt_position
+	target_yaw = kurt_yaw
+	if obj.target_mode == 2:
+		return
+	var other: MDKObject = null
+	if items.decoy and not items.decoy.dead:
+		other = items.decoy
+	elif alien_target and not alien_target.dead:
+		other = alien_target
+	if other:
+		target_position = other.mdk_position
+		target_yaw = other.yaw
+
+
+## Whether a sound (by name) is playing anywhere (`if_sound_playing`).
+func is_sound_playing(sound_name: String) -> bool:
+	for player in get_tree().get_nodes_in_group(&"mdk_sounds"):
+		if player.get_meta(&"sound") == sound_name.to_upper() and player.playing:
+			return true
+	return false
+
+
+## Moves Kurt (`teleport_player`): within the arena with a white flash when `arena_name` is empty,
+## otherwise into that arena (the port keeps every arena where it is, so it's the same).
+func teleport_kurt(arena_name: String, mdk_position: Vector3, yaw: float) -> void:
+	kurt.teleport(MDKMeshBuilder.to_godot(mdk_position), deg_to_rad(yaw - 90.0))
+	if arena_name.is_empty():
+		kurt.white_flash = maxf(kurt.white_flash, 255.0)
 
 
 ## Converts a Godot position to MDK coordinates.
@@ -117,6 +166,11 @@ func _physics_process(delta: float) -> void:
 		_tick_count += 1
 
 
+## Ticks run so far.
+func tick_count() -> int:
+	return _tick_count
+
+
 ## Average duration of a script tick, in milliseconds (for profiling).
 func average_tick_ms() -> float:
 	if not vm:
@@ -130,10 +184,7 @@ func _tick() -> void:
 	# Kurt's yaw 0 faces -Z (Godot) = +Y (MDK).
 	target_yaw = fposmod(90.0 + rad_to_deg(kurt.yaw), 360.0)
 	kurt_yaw = target_yaw
-	# Aliens aim at the decoy while it walks (`script_run`).
-	if items.decoy and not items.decoy.dead:
-		target_position = items.decoy.mdk_position
-		target_yaw = items.decoy.yaw
+	alarm_ticks = maxi(alarm_ticks - 1, 0)
 	var arena_name := level.get_arena_at(kurt.global_position)
 	if not arena_name.is_empty() and arena_name != current_arena:
 		current_arena = arena_name
@@ -149,6 +200,7 @@ func _tick() -> void:
 		fire_chain_gun()
 	if not current_arena.is_empty():
 		vm.run(get_arena_state(current_arena).controller)
+	items.update_twisters()
 	# Only the objects of Kurt's arena are updated (0x43c7dc; the original also updates the arena
 	# seen through an open door).
 	for obj in objects.duplicate():
@@ -320,7 +372,66 @@ func fire_chain_gun() -> void:
 	var direction := Vector2.from_angle(deg_to_rad(target_yaw)) * CHAIN_GUN_WALL_REACH
 	var hit := raycast(origin, origin + Vector3(direction.x, direction.y, 0.0))
 	if not hit.is_empty():
+		hit_group_at(hit, damage, HIT_CHAIN_GUN, -2 if super_gun else -1)
 		spark(to_mdk(hit.position), 1)
+
+
+## Kinds of hits on triangle groups (0x40d560), matched against their hit flags and masks.
+const HIT_SHOT := 1
+const HIT_CHAIN_GUN := 2
+const HIT_BLAST := 3
+const HIT_OTHER_BLAST := 4
+
+
+## A hit on the arena triangle that `hit` (a `raycast()` result) found; see `hit_group()`.
+func hit_group_at(hit: Dictionary, amount: int, kind: int, weapon: int) -> int:
+	var collider: Object = hit.get("collider")
+	if not collider or not collider.has_meta(&"group"):
+		return 0
+	return hit_group(collider.get_meta(&"arena"), collider.get_meta(&"group"), amount, kind, weapon)
+
+
+## A hit on a triangle of an arena group (0x40d560). `kind` is what hit it (`HIT_SHOT`,
+## `HIT_CHAIN_GUN`, `HIT_BLAST`, …), `weapon` the hit type its script sees (`if_hit_weapon`). The
+## group's hit flags (opcode 168) and hit script (opcode 99) decide what happens. Returns 1 when
+## the hit script ran, | 2 when the group stops such hits (flag 0x20).
+func hit_group(arena_name: String, group: int, amount: int, kind: int, weapon: int) -> int:
+	if group < 1 or group > 16:
+		return 0
+	var state := get_arena_state(arena_name)
+	var i := group - 1
+	var flags := state.group_hit_flags[i]
+	var always := false
+	var result := 0
+	if flags & kind:
+		if flags & 0x80:
+			# A destructible group: its damaged version appears.
+			level.set_group_state(arena_name, group, 3)
+		if flags & 0x40:
+			always = true
+			amount = maxi(amount, 1)
+		if flags & 0x20:
+			result = 2
+	if state.group_hit_scripts[i] and (state.group_hit_masks[i] & kind or always):
+		state.group_counters[i] += amount
+		# The script runs at once, from its start, in the arena's scratch object (0x45c9a0).
+		var scratch := state.hit_scripts
+		scratch.hit_type = weapon
+		scratch.hit_event = 0
+		scratch.wait_time = 0.0
+		scratch.gosub_returns.clear()
+		scratch.gosub_restarts.clear()
+		scratch.restart = state.group_hit_scripts[i]
+		vm.run(scratch)
+		result |= 1
+	return result
+
+
+## Shakes the screen at least this much (`0x467f7c`).
+func raise_shake(amount: float) -> void:
+	var camera := get_viewport().get_camera_3d() as FollowCamera
+	if camera:
+		camera.raise_shake(amount)
 
 
 ## Aim test of the chain gun (`0x41ab2c`): a box is a target when it's within its size + 140 units
@@ -452,6 +563,8 @@ func play_sound_at(sound_name: String, point: Vector3) -> void:
 	player.unit_size = 50.0
 	player.position = MDKMeshBuilder.to_godot(point)
 	player.finished.connect(player.queue_free)
+	player.add_to_group(&"mdk_sounds")
+	player.set_meta(&"sound", sound_name.to_upper())
 	add_child(player)
 	player.play()
 
@@ -517,6 +630,86 @@ func fire(obj: MDKObject, origin: Array, bullet_name: String, script: int) -> MD
 
 func hurt_kurt(damage: int) -> void:
 	kurt.hurt(damage)
+
+
+## Whether Kurt looks at an object (0x460730): it's `min_range`–`max_range` away, within a cone around
+## his yaw that narrows from 90° next to him to `cone` at `max_range`, and in sight.
+func kurt_looks_at(obj: MDKObject, min_range: float, max_range: float, cone: float) -> bool:
+	var distance := kurt_position.distance_to(obj.mdk_position)
+	if distance < min_range or distance > max_range:
+		return false
+	var angle := fposmod(absf(kurt_yaw - rad_to_deg(atan2(obj.mdk_position.y - kurt_position.y, obj.mdk_position.x - kurt_position.x))), 360.0)
+	var allowed := (cone - 90.0) / max_range * distance + 90.0
+	if angle > allowed and angle < 360.0 - allowed:
+		return false
+	return raycast(kurt_position + Vector3(0, 0, 5), obj.mdk_position + Vector3(0, 0, 2)).is_empty()
+
+
+## The object Kurt stands on (`0x573b84`), if any.
+func get_kurt_platform() -> MDKObject:
+	if not kurt.is_on_floor():
+		return null
+	for i in kurt.get_slide_collision_count():
+		var collision := kurt.get_slide_collision(i)
+		var body := collision.get_collider() as Node
+		if body and collision.get_normal().y > 0.7 and body.get_parent() is MDKObject:
+			return body.get_parent()
+	return null
+
+
+## Contact damage of an object (`touch_damage` 0x45cf60): `targets` 1 hurts Kurt once for each
+## visible part touching him, 2 hurts the other objects touching its box (hit event −3, hit type
+## −4). With `flags` 1 the object dies when it hits. Returns whether it hit.
+func touch_damage(obj: MDKObject, targets: int, damage: int, flags: int) -> bool:
+	var box := get_world_bounds(obj)
+	var hit := false
+	if targets & 1:
+		var kurt_box := get_kurt_box()
+		if box.intersects(kurt_box):
+			var part_bounds := obj.get_part_bounds()
+			for i in part_bounds.size():
+				if not obj.hidden_parts & (1 << i) and get_world_bounds(obj, part_bounds[i]).intersects(kurt_box):
+					kurt.hurt(damage)
+					hit = true
+	if targets & 2:
+		for other in objects.duplicate():
+			if other == obj or other.dead or other.arena != obj.arena or other.flags & 0x820:
+				continue
+			if not box.intersects(get_world_bounds(other)):
+				continue
+			hit = true
+			other.hit_event = -3
+			other.hit_type = -4
+			other.hit_direction = obj.yaw
+			if other.health < 65000:
+				other.health -= damage
+			if other.health < 1:
+				kill(other)
+	if hit and flags & 1:
+		kill(obj)
+	return hit
+
+
+## `push_kurt`: knocks Kurt down (unless he's already down), pushed along the object's frame (mode
+## 0: `[0, a, b, up]`) or away from it (`[mode, a, up]`), and `up` added to his vertical speed.
+func push_kurt(obj: MDKObject, args: Array) -> void:
+	if kurt.state in [Kurt.State.KNOCKED, Kurt.State.DEAD]:
+		return
+	var push: Vector2
+	var up: float
+	if args[0] == 0:
+		var c := cos(deg_to_rad(obj.yaw))
+		var s := sin(deg_to_rad(obj.yaw))
+		push = Vector2(-args[1] * c - args[2] * s, -args[2] * c - args[1] * s)
+		up = args[3]
+	else:
+		var away := Vector2(kurt_position.x - obj.mdk_position.x, kurt_position.y - obj.mdk_position.y)
+		push = away.normalized() * args[1] if away != Vector2.ZERO else Vector2(args[1], 0.0)
+		up = args[2]
+	# The push is added once per tick of the frame, in units per tick.
+	push *= TICK * 30.0
+	kurt.knock_down(Vector2(push.x, -push.y))
+	kurt.velocity.y += up
 
 
 ## Kurt's bounding box (MDK coordinates).
@@ -665,12 +858,16 @@ func get_animation(obj: MDKObject, offset: int) -> MDKModelAnimation:
 		return null
 	var bytes := level.cmi.bytes
 	if bytes.decode_u32(offset) == 0:
-		var animation_name := bytes.slice(offset + 4, offset + 12).get_string_from_ascii()
-		var arena := level.mto.get_arena(obj.arena) if level.mto.arena_offsets.has(obj.arena) else null
-		return arena.animations.get(animation_name) if arena else null
+		return find_arena_animation(obj.arena, bytes.slice(offset + 4, offset + 12).get_string_from_ascii())
 	if not _animations.has(offset):
 		_animations[offset] = MDKModelAnimation.parse("CMI_%x" % offset, bytes, offset)
 	return _animations[offset]
+
+
+## An animation of an arena's models, by name (`arena_find_animation` 0x440adc).
+func find_arena_animation(arena_name: String, animation_name: String) -> MDKModelAnimation:
+	var arena := level.mto.get_arena(arena_name) if level.mto.arena_offsets.has(arena_name) else null
+	return arena.animations.get(animation_name) if arena else null
 
 
 func _find_model(arena_name: String, type_name: String) -> MDKModel:
@@ -734,5 +931,7 @@ func play_sound(obj: MDKObject, sound_name: String, flags: int, _position: Varia
 		player.unit_size = 50.0
 	player.name = "Sound_" + sound_name
 	player.stream = stream
+	player.add_to_group(&"mdk_sounds")
+	player.set_meta(&"sound", sound_name.to_upper())
 	obj.add_child(player)
 	player.play()

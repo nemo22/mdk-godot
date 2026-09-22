@@ -47,15 +47,16 @@ func update(obj: MDKObject) -> void:
 	_apply_velocity(obj)
 	if obj.dead:
 		return
+	# Kurt's items and effects (0x1000), or else pickups (0x200000).
 	if obj.thrown_kind > 0:
 		runtime.items.update_thrown(obj)
 		if obj.dead:
 			return
-	if obj.flags & MDKObject.FLAG_PICKUP:
+	elif obj.flags & MDKObject.FLAG_PICKUP:
 		runtime.behaviors.update_pickup(obj)
 	var time := obj.animation_time
 	obj.advance_animation(dt)
-	if not obj.frame_sound.is_empty() and obj.animation and time < obj.frame_sound_frame 			and obj.frame_sound_frame <= time + dt * MDKObject.ANIMATION_FPS * obj.animation.speed:
+	if not obj.frame_sound.is_empty() and obj.animation and time < obj.frame_sound_frame 			and obj.frame_sound_frame <= time + dt * obj.animation_fps * obj.animation.speed:
 		runtime.play_sound(obj, obj.frame_sound, 0, null)
 		obj.frame_sound = ""
 	obj.previous_position = obj.mdk_position
@@ -172,6 +173,12 @@ func _update_command(obj: MDKObject) -> void:
 			_follow_attachment(obj)
 		88:
 			_move_forward(obj)
+		15:
+			# The alarm: `ALERT` every 32 ticks, and `if_alarm` holds for 10 ticks.
+			if obj.arena == runtime.current_arena:
+				if runtime.tick_count() & 31 == 0:
+					runtime.play_sound_at("ALERT", obj.mdk_position)
+				runtime.alarm_ticks = 10
 		229:
 			obj.parameter_timer += dt
 			if obj.parameter_timer >= obj.parameter * 0.5 and obj.contact_flags & MDKObject.CONTACT_FLOOR:

@@ -29,6 +29,7 @@ func _init(p_runtime: MDKScriptRuntime, p_decoder: MDKScriptDecoder) -> void:
 func run(obj: MDKObject) -> void:
 	if obj.restart == 0 or obj.dead:
 		return
+	runtime.select_target(obj)
 	var pc := obj.restart
 	if obj.wait_time > 0.0:
 		obj.wait_time -= dt
@@ -564,8 +565,16 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 				obj.attach_points = Vector2i(o[0], o[1])
 				obj.move_command = 74
 
-		175:  # if_inventory (Kurt's inventory isn't implemented: always empty)
-			return _branch(obj, ins, _compare(0.0, [o[1], o[2], o[3] if o[3] != null else 0.0]))
+		175:  # if_inventory: how many items of a type Kurt has
+			var count := 0
+			for slot in runtime.kurt.inventory.slots:
+				if slot.item == o[0]:
+					count += slot.count
+			return _branch(obj, ins, _compare(count, [o[1], o[2], o[3] if o[3] != null else 0.0]))
+		174:  # if_ammo: 0 the super chain gun's ticks, 1–5 sniper ammo
+			var inventory := runtime.kurt.inventory
+			var amount: int = inventory.super_chain_gun if o[0] == 0 else (inventory.ammo[o[0] - 1] if o[0] <= 5 else 0)
+			return _branch(obj, ins, _compare(amount, [o[1], o[2], o[3] if o[3] != null else 0.0]))
 
 		# Triangle groups of the arena.
 		98:  # group_set_state
@@ -643,11 +652,330 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			elif o[0] != 0:
 				condition = not playing
 			return _branch(obj, ins, condition)
+
+		# Animation speed.
+		58:  # anim_fps
+			obj.animation_fps = _value(obj, o[0])
+		186:  # anim_fps_from_speed: the animation keeps up with the walking speed
+			obj.animation_fps = obj.speed * 30.0 / o[1] if o[1] != 0.0 else MDKObject.ANIMATION_FPS
+		154:  # wait_anim_frame: runs again every frame until the animation reaches the frame
+			obj.restart = ins.pc
+			var frame: int = o[0]
+			var reached := obj.is_animation_done() or (frame >= 0 and obj.animation_frame >= frame) \
+					or (frame == -1 and (obj.animation_end_frame < 0 or obj.animation_frame == obj.animation_end_frame))
+			if not reached:
+				return YIELD
+
+		# More conditions.
+		127:  # if_health
+			return _branch(obj, ins, _compare(obj.health, o[0]))
+		185:  # if_speed
+			return _branch(obj, ins, _compare(obj.speed, o[0]))
+		160:  # if_yaw
+			return _branch(obj, ins, _compare(fposmod(obj.yaw, 360.0), o[0]))
+		241:  # if_player_health
+			return _branch(obj, ins, _compare(runtime.kurt.health, o[0]))
+		238:  # if_self_pos: 0 x, 1 y, other z
+			return _branch(obj, ins, _compare(obj.mdk_position[mini(o[0], 2)], o[1]))
+		237:  # if_self_in_box
+			var p := obj.mdk_position
+			return _branch(obj, ins, p.x >= o[0] and p.y >= o[1] and p.z >= o[2] and p.x <= o[3] and p.y <= o[4] and p.z <= o[5])
+		191:  # if_kurt_delta: Kurt's offset along an axis, absolute unless +0x80
+			var delta: float = (runtime.kurt_position - obj.mdk_position)[mini(o[0] & 0x7F, 2)]
+			if not o[0] & 0x80:
+				delta = absf(delta)
+			return _branch(obj, ins, _compare(delta, o[1]))
+		188:  # if_target_dist2d
+			var to_target := runtime.target_position - obj.mdk_position
+			return _branch(obj, ins, _compare(Vector2(to_target.x, to_target.y).length(), o[0]))
+		234:  # if_target_angle_signed
+			return _branch(obj, ins, _compare(wrapf(obj.yaw - obj.yaw_to(runtime.target_position), -180.0, 180.0), o[0]))
+		87:  # if_kurt_looks_at_me
+			return _branch(obj, ins, runtime.kurt_looks_at(obj, o[0], o[1], o[2]))
+		114:  # if_player_on_me
+			return _branch(obj, ins, runtime.get_kurt_platform() == obj)
+		250:  # if_in_box: an object of a type inside a box (Kurt's projectiles aren't done yet)
+			var inside := false
+			if o[0] == 0xFF:
+				var box: Array = o[3]
+				for other in runtime.objects:
+					if other.dead or other.arena != obj.arena or other.type_name.to_upper() != String(o[1]).to_upper():
+						continue
+					var p := other.mdk_position
+					if o[2] == 2:
+						inside = p.x >= box[0] and p.y >= box[1] and p.x <= box[2] and p.y <= box[3]
+					else:
+						inside = p.x >= box[0] and p.y >= box[1] and p.x <= box[3] and p.y <= box[4] \
+								and (o[2] != 3 or (p.z >= box[2] and p.z <= box[5]))
+					if inside:
+						break
+			return _branch(obj, ins, inside)
+		33:  # if_path_frame
+			return _branch(obj, ins, obj.path == 0 or roundi(obj.path_time) >= o[0] - 1)
+		34:  # if_no_leader (the movement command is cleared when true)
+			var alone := not obj.leader or obj.leader.dead
+			var next := _branch(obj, ins, alone)
+			if alone:
+				obj.move_command = 0
+			return next
+
+		# Partners (`obj+0x2b8`).
+		245:  # find_object
+			obj.linked = _find_object(obj, o[0][-1], o[0][0] if o[0].size() == 2 else 0)
+		213:  # if_partner_distance (0 without a partner, at least 1)
+			var distance := 0.0
+			if obj.linked and not obj.linked.dead:
+				distance = maxf(obj.distance_to(obj.linked.mdk_position), 1.0)
+			return _branch(obj, ins, _compare(distance, o[0]))
+		214:  # if_partner_angle
+			var angle := 0.0
+			if obj.linked and not obj.linked.dead:
+				angle = wrapf(obj.yaw - obj.yaw_to(obj.linked.mdk_position), -180.0, 180.0)
+			return _branch(obj, ins, _compare(angle, o[0]))
+		179:  # spawn_partner
+			var partner := runtime.spawn(obj, o[0], obj.mdk_position, 0.0, -1, o[1], false)
+			if partner:
+				partner.linked = obj
+				obj.linked = partner
+		180:  # snap_to_partner
+			if obj.linked and not obj.linked.dead:
+				obj.mdk_position = obj.linked.mdk_position
+				if o[0][0] != 0:
+					obj.mdk_position += Vector3(o[0][1], o[0][2], o[0][3])
+		228:  # link_partners: pairs up unlinked objects of a type closer than 100
+			if o[0] is String:
+				_link_partners(obj, o[0])
+			elif o[0][1] == 0:
+				obj.linked = null
+		246:  # turn_to_linked (bit 7: the pitch too)
+			if o[0] & 1 and obj.linked and not obj.linked.dead:
+				var step: float = o[1] * dt
+				var diff := wrapf(obj.yaw_to(obj.linked.mdk_position) - obj.yaw, -180.0, 180.0)
+				obj.yaw = fposmod(obj.yaw + clampf(diff, -step, step), 360.0)
+				if o[0] & 0x80:
+					var d := obj.linked.mdk_position - obj.mdk_position
+					var target_pitch := rad_to_deg(atan2(d.z + obj.height_offset, Vector2(d.x, d.y).length()))
+					obj.pitch += clampf(wrapf(target_pitch - obj.pitch, -180.0, 180.0), -step, step)
+
+		# Parts, hits and damage.
+		208:  # if_part_hit: the part is hidden (blown off or destroyed)
+			var part := obj.find_part(o[0])
+			var hit := part >= 0 and obj.hidden_parts & (1 << part) != 0
+			if hit:
+				obj.hit_event = 0
+			return _branch(obj, ins, hit)
+		32:  # clear_parts_mask: shows parts again, except blown off ones
+			var mask := obj.hidden_parts
+			for entry: Array in o[0]:
+				var part_name: String = entry[0].to_upper()
+				if obj.model:
+					for i in obj.model.parts.size():
+						if (part_name == "ALL" or obj.model.parts[i].name.to_upper() == part_name) and not obj.locked_parts & (1 << i):
+							mask &= ~(1 << i)
+			obj.set_hidden_parts(mask)
+		195:  # if_hit_weapon
+			return _branch(obj, ins, obj.hit_type == o[0])
+		158:  # touch_damage: stops the script when the object died of it
+			var hit := runtime.touch_damage(obj, o[0], o[1], o[2])
+			if obj.dead or obj.health == 0:
+				return YIELD
+			if hit and o[2] & 2:
+				return _goto(obj, o[3])
+		184:  # explode: a blast on everything around, then the object dies
+			obj.flags |= MDKObject.FLAG_NOT_TARGET
+			if o[0] != 0.0 and o[1] != 0.0:
+				runtime.items.blast(obj.mdk_position, roundi(o[0]), o[1], 7, -5, null, false)
+			runtime.kill(obj)
+			return YIELD
+		172:  # explosion
+			var point := _point(obj, o[0])
+			runtime.play_sound_at("EXPLODE", point)
+			runtime.spawn_explosion(obj.arena, point, o[1])
+		178:  # explosion_damage: `flags` are the targets (1 Kurt, 2 objects, 4 triangle groups)
+			var point := _point(obj, o[0])
+			runtime.play_sound_at("EXPLODE", point)
+			runtime.spawn_explosion(obj.arena, point, o[1])
+			runtime.items.blast(point, roundi(o[2]), o[3], o[4], -5, null)
+		156:  # spawn_at_point
+			runtime.spawn(obj, o[1], obj.get_reference_point(o[0]), 0.0, -1, o[2], false)
+		205:  # set_21f: indestructible
+			obj.indestructible = o[0] != 0
+
+		# Kurt and the screen.
+		135:  # raise_573aa8: shakes the screen
+			runtime.raise_shake(o[0])
+		215:  # screen_flash
+			runtime.kurt.white_flash = maxf(runtime.kurt.white_flash, roundf(_value(obj, o[0])))
+		240:  # set_hurt_flash: Kurt's knock-down counter (1 means 5), unless he's invulnerable
+			if runtime.kurt.invulnerable <= 0.0:
+				runtime.kurt.knock_damage = 5.0 if o[0] == 1 else float(o[0])
+		244:  # set_global_573bd4: Kurt's invulnerability time
+			runtime.kurt.invulnerable = o[1] if o[0] == 0 else runtime.kurt.invulnerable + o[1]
+		248:  # push_kurt: knocks Kurt down, pushed away
+			runtime.push_kurt(obj, o[0])
+		170:  # inherit_kurt_vel
+			obj.velocity += MDKScriptRuntime.to_mdk(runtime.kurt.velocity) * o[0]
+		217:  # global_573c4c_add (a count shown after the level)
+			if o[0] == 1:
+				runtime.global_573c4c += o[1]
+		202:  # set_574304: how the sky is drawn (0 normally)
+			runtime.sky_mode = o[0]
+
+		# More movement.
+		63:  # set_flag148_10_inv: Kurt goes through the object (0x10)
+			obj.flags = (obj.flags & ~MDKObject.FLAG_NOT_SOLID) if o[0] != 0 else (obj.flags | MDKObject.FLAG_NOT_SOLID)
+		41:  # set_targetable: flag 0x100 (a platform), and 0x800000 with mode 2
+			obj.flags = (obj.flags | 0x100) if o[0] != 0 else (obj.flags & ~0x100)
+			obj.flags = (obj.flags | 0x800000) if o[0] == 2 else (obj.flags & ~0x800000)
+		79:  # set_pos
+			obj.mdk_position = Vector3(o[0], o[1], o[2])
+		91:  # set_path_speed
+			obj.path_speed = _value(obj, o[0])
+		187:  # random_kick
+			var kick: Vector2 = Vector2.from_angle(deg_to_rad(randf() * 360.0)) * o[0] * randf_range(0.5, 1.5)
+			obj.velocity += Vector3(kick.x, kick.y, o[1] * randf_range(0.5, 1.5))
+		126:  # aim_pitch_target
+			var d := runtime.target_position - obj.mdk_position
+			obj.pitch = rad_to_deg(atan2(d.z + 3.0, Vector2(d.x, d.y).length()))
+		218:  # set_f13c: the pitch
+			obj.pitch = o[0]
+		157:  # vel_away_from (a negative speed moves towards it)
+			for other in runtime.get_arena_objects(obj):
+				if other.type_name.to_upper() == o[0].to_upper() and (o[1] == -1 or other.instance_id == o[1]):
+					var away := obj.mdk_position - other.mdk_position
+					if away != Vector3.ZERO:
+						obj.velocity = away.normalized() * o[2]
+						obj.path = 0
+					break
+		210:  # set_2c0 (not identified)
+			obj.value_2c0 = _value(obj, o[0])
+		199:  # set_104 (not identified)
+			obj.value_104 = _value(obj, o[0])
+		183:  # switch_gosub: a gosub picked by a variable, returning after the table
+			var index := int(_variables(obj, o[0])[clampi(o[1], 0, 3)])
+			if index >= 0 and index < o[2].size():
+				return _gosub(obj, ins.next, o[2][index][0])
+		251:  # set_target_mode: 1 the aliens' target, 2 always targets Kurt
+			obj.target_mode = o[0]
+			if o[0] == 1:
+				runtime.alien_target = obj
+			elif o[0] == 0 and runtime.alien_target == obj:
+				runtime.alien_target = null
+		27:  # if_alarm: an object sounds the alarm (movement command 15)
+			return _branch(obj, ins, runtime.alarm_ticks > 0)
+		233:  # if_sound_playing
+			return _branch(obj, ins, runtime.is_sound_playing(o[0]))
+		192:  # if_no_flat_floor_at: no floor below a point in front, or a steep one
+			var offset := Vector2(o[0], o[1]).rotated(deg_to_rad(obj.yaw))
+			var point := obj.mdk_position + Vector3(offset.x, offset.y, 1.0)
+			var hit := runtime.raycast(point, point - Vector3(0, 0, o[2] + 1.0))
+			return _branch(obj, ins, hit.is_empty() or absf(hit.normal.y) < o[3])
+		243:  # if_point_sees_player
+			var point := obj.get_reference_point(o[0])
+			return _branch(obj, ins, point.distance_to(runtime.kurt_position) <= o[1]
+					and runtime.raycast(point, runtime.kurt_position + Vector3(0, 0, 4)).is_empty())
+		13:  # if_cheat_key (cheat keys aren't done)
+			return _branch(obj, ins, false)
+		171:  # if_is_573c30 (the object Kurt rides; there's none)
+			return _branch(obj, ins, false)
+		77:  # debug_msg
+			pass
+		204:  # avoid_objects: turns away from an object it overlaps
+			var box := runtime.get_world_bounds(obj)
+			for other in runtime.get_arena_objects(obj):
+				if other.flags & (MDKObject.FLAG_NOT_SOLID | MDKObject.FLAG_NOT_SOLID_2) or not box.intersects(runtime.get_world_bounds(other)):
+					continue
+				var away := wrapf(obj.yaw_to(other.mdk_position) + 180.0 - obj.yaw, -180.0, 180.0)
+				obj.yaw = fposmod(obj.yaw + signf(away) * minf(absf(away), 180.0 * dt), 360.0)
+				break
+		49:  # release_children: lets go of the last followers of a chain
+			for i in o[0]:
+				var last: MDKObject = null
+				for other in runtime.get_arena_objects(obj):
+					if other.leader == obj and other.move_command == 30 and (not last or other.instance_id > last.instance_id):
+						last = other
+				if not last:
+					return _branch(obj, ins, true)
+				last.leader = null
+				last.move_command = 0
+		129:  # blow_off_parts: the parts go (the debris isn't drawn yet) and stay hidden
+			if o[0] in [0, 1, 2] and obj.model:
+				var mask := 0
+				for part_name: String in o[1]:
+					var part := obj.find_part(part_name)
+					if part >= 0:
+						mask |= 1 << part
+				obj.locked_parts |= mask
+				obj.set_hidden_parts(obj.hidden_parts | mask)
+		112:  # teleport_player
+			runtime.teleport_kurt(o[0], Vector3(o[1], o[2], o[3]), o[4])
+			if not o[0].is_empty():
+				obj.restart = 0
+				obj.gosub_returns.clear()
+				obj.gosub_restarts.clear()
+				return YIELD
+		223:  # arena_set_neighbour (every arena is always there in the port)
+			pass
+		239:  # set_27c (not identified)
+			pass
 		_:
 			unimplemented[ins.opcode] = unimplemented.get(ins.opcode, 0) + 1
 			if not ins.action.is_empty():
 				return _branch(obj, ins, false)
 	return ins.next
+
+
+## An object of the arena (not `obj`) of a type (`find_object`): mode 0 a random one, 1 the
+## nearest, 2 the nearest of Kurt's items (0x1000) within 200, at most 9 units higher and in sight.
+func _find_object(obj: MDKObject, type_name: String, mode: int) -> MDKObject:
+	var found: Array[MDKObject] = []
+	var best: MDKObject = null
+	var best_distance := INF
+	for other in runtime.get_arena_objects(obj):
+		if other.type_name.to_upper() != type_name.to_upper():
+			continue
+		var distance := obj.distance_to(other.mdk_position)
+		if mode == 2 and (distance > 200.0 or not other.flags & 0x1000 or other.mdk_position.z > obj.mdk_position.z + 9.0
+				or not runtime.raycast(obj.mdk_position + Vector3(0, 0, 5), other.mdk_position + Vector3(0, 0, 2)).is_empty()):
+			continue
+		found.push_back(other)
+		if distance < best_distance:
+			best = other
+			best_distance = distance
+	if found.is_empty():
+		return null
+	return found[randi() % found.size()] if mode == 0 else best
+
+
+## Pairs up the objects of a type without a partner that are closer than 100 units (`link_partners`).
+func _link_partners(obj: MDKObject, type_name: String) -> void:
+	var loose: Array[MDKObject] = []
+	for other in runtime.objects:
+		if not other.dead and other.arena == obj.arena and other.type_name.to_upper() == type_name.to_upper() \
+				and not (other.linked and not other.linked.dead):
+			loose.push_back(other)
+	for i in loose.size():
+		if loose[i].linked:
+			continue
+		for j in range(i + 1, loose.size()):
+			if not loose[j].linked and loose[i].mdk_position.distance_squared_to(loose[j].mdk_position) < 10000.0:
+				loose[i].linked = loose[j]
+				loose[j].linked = loose[i]
+				break
+
+
+## A position operand (`op172_position`): mode 3 a reference point of the object, 1 relative to the
+## object, 2 turned by its yaw, other modes absolute.
+func _point(obj: MDKObject, operand: Array) -> Vector3:
+	match operand[0]:
+		3:
+			return obj.get_reference_point(operand[1])
+		1:
+			return obj.mdk_position + Vector3(operand[1], operand[2], operand[3])
+		2:
+			var offset := Vector2(operand[1], operand[2]).rotated(deg_to_rad(obj.yaw))
+			return obj.mdk_position + Vector3(offset.x, offset.y, operand[3])
+	return Vector3(operand[1], operand[2], operand[3])
 
 
 func _start_move(obj: MDKObject, command: int, destination: Vector3) -> void:

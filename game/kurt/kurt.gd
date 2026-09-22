@@ -43,10 +43,22 @@ const CHUTE_BRAKE := 256.0
 ## Seconds standing still before the idle animation plays.
 const IDLE_DELAY := 6.0
 
-enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD, THROW }
+enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD, THROW, KNOCKED }
 
 ## Frame of `K_SPWEP` at which the item leaves Kurt's hand (`damp_animate`).
 const THROW_FRAME := 8
+
+## Knocking down (`damp_control` 0x4664xx): the damage taken adds up (`0x573b20`, draining by 2 per
+## second, at most 5); at 5 Kurt is knocked down (state 901: `K_BANG` then `K_BFLIP`) and is
+## invulnerable for 3 seconds. In the air it only happens within 13 units of a floor, and he's
+## slammed onto it at 64 u/s.
+const KNOCKDOWN_DAMAGE := 5.0
+const KNOCKDOWN_DRAIN := 2.0
+const KNOCKDOWN_INVULNERABILITY := 3.0
+const KNOCKDOWN_FLOOR_DISTANCE := 13.0
+const KNOCKDOWN_SLAM_SPEED := -64.0
+## A push (`push_kurt`, `0x573c08`) slows down by 0.1 u/tick per tick.
+const PUSH_DRAIN := 0.1 * TICKS * TICKS
 
 ## Muzzle flash (`K_MUZZF`) offsets in the states that don't show the chain gun firing by
 ## themselves (`damp_animate`): a random offset of 0–4 pixels is added. `SHOT` and `RUN_FIRE` have
@@ -76,6 +88,7 @@ const STATE_ANIMATIONS := {
 	State.RUN_FIRE: ["K_RUNFIR", true],
 	State.DEAD: ["K_BANG", false],
 	State.THROW: ["K_SPWEP", false],
+	State.KNOCKED: ["K_BANG", false],
 }
 
 ## Yaw in radians (0 faces -Z).
@@ -97,8 +110,14 @@ var inventory := KurtInventory.new()
 ## Red flash after hits (`0x573b70`: +25 per damage point, 75–180, -4 per tick); once Kurt is dead
 ## it's the fade of the skull, and the level restarts at 255.
 var hurt_flash := 0.0
+## White flash of the screen (`0x573b68`: the nuke, `screen_flash`), fading by 4 per tick.
+var white_flash := 0.0
 ## Invulnerability time in seconds (`0x573bd4`).
 var invulnerable := 0.0
+## Damage taken recently (`0x573b20`), see `KNOCKDOWN_DAMAGE`.
+var knock_damage := 0.0
+## Horizontal push (u/s, Godot's XZ plane) while knocked down.
+var push := Vector2.ZERO
 signal died
 ## Kurt uses the selected item (0x46ce78): the scripts runtime throws it.
 signal item_used
@@ -111,6 +130,9 @@ var sprites: MDKBni
 var get_sound: Callable
 
 var _mouse_turn := 0.0
+## Object bodies Kurt is inside of (an object moved into him): he doesn't collide with them until
+## he's out, like the original's box sweeps, instead of being pushed out (maybe through the floor).
+var _inside_bodies: Array[RID] = []
 var _jump_ticks_left := 0
 var _jump_released := true
 ## The original alternates two pairs of footstep sounds (`damp_animate`).
@@ -122,6 +144,7 @@ var _muzzle_frame := 0
 var _ticks := 0
 
 @onready var sprite: SpriteAnimator = $Sprite
+@onready var _shape: CollisionShape3D = $CollisionShape3D
 @onready var muzzle: SpriteAnimator = $Muzzle
 
 
@@ -158,7 +181,10 @@ func teleport(p_position: Vector3, p_yaw: float) -> void:
 ## Damage from aliens (`hurt_kurt`).
 ## Damage from aliens (`hurt_kurt` 0x46a604): 2/3 on easy (at least 1), double on hard.
 func hurt(damage: int) -> void:
-	if health == 0 or invulnerable > 0.0 or state == State.DEAD:
+	if health == 0:
+		return
+	if invulnerable > 0.0 or state in [State.DEAD, State.KNOCKED]:
+		knock_damage = 0.0
 		return
 	match inventory.difficulty:
 		0:
@@ -168,6 +194,7 @@ func hurt(damage: int) -> void:
 	if damage > 0:
 		hurt_flash = clampf(hurt_flash + damage * 25, 75.0, 180.0)
 	health = maxi(health - damage, 0)
+	knock_damage += damage
 
 
 ## Facing direction (horizontal).
@@ -186,13 +213,15 @@ func _physics_process(delta: float) -> void:
 		_update_death(delta)
 		return
 	hurt_flash = maxf(hurt_flash - 4.0 * TICKS * delta, 0.0)
+	white_flash = maxf(white_flash - 4.0 * TICKS * delta, 0.0)
+	_update_knock_damage(delta)
 	var turbo := Input.is_action_pressed(&"turbo")
 	var on_floor := is_on_floor()
 	_update_turning(delta, turbo)
 
 	var forward_input := Input.get_axis(&"move_back", &"move_forward")
 	var strafe_input := Input.get_axis(&"strafe_left", &"strafe_right")
-	if state == State.THROW:
+	if state in [State.THROW, State.KNOCKED]:
 		forward_input = 0.0
 		strafe_input = 0.0
 	var air := 1.0 if on_floor else AIR_CONTROL
@@ -200,15 +229,63 @@ func _physics_process(delta: float) -> void:
 	strafe_speed = _accelerate(strafe_speed, strafe_input, turbo, air, air, delta)
 	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
 	var horizontal := get_facing() * forward_speed + right * strafe_speed
-	velocity.x = horizontal.x
-	velocity.z = horizontal.z
+	velocity.x = horizontal.x + push.x
+	velocity.z = horizontal.z + push.y
+	push = Vector2(move_toward(push.x, 0.0, PUSH_DRAIN * delta), move_toward(push.y, 0.0, PUSH_DRAIN * delta))
 
 	_update_vertical(delta, on_floor)
+	_update_inside_bodies()
 	move_and_slide()
 	_update_items()
 	_update_firing()
 	_update_state(delta, forward_input, strafe_input)
 	_update_muzzle()
+
+
+func _update_inside_bodies() -> void:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _shape.shape
+	query.transform = _shape.global_transform
+	query.collision_mask = 2
+	var inside: Array[RID] = []
+	for hit in get_world_3d().direct_space_state.intersect_shape(query, 16):
+		inside.push_back(hit.rid)
+	for rid in _inside_bodies:
+		if rid not in inside:
+			PhysicsServer3D.body_remove_collision_exception(get_rid(), rid)
+	for rid in inside:
+		if rid not in _inside_bodies:
+			PhysicsServer3D.body_add_collision_exception(get_rid(), rid)
+	_inside_bodies = inside
+
+
+## Knocks Kurt down when the damage taken recently reaches 5 (see `KNOCKDOWN_DAMAGE`).
+func _update_knock_damage(delta: float) -> void:
+	if health > 0 and knock_damage >= KNOCKDOWN_DAMAGE and state not in [State.KNOCKED, State.DEAD]:
+		var knocked := is_on_floor()
+		if not knocked:
+			var query := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3.DOWN * KNOCKDOWN_FLOOR_DISTANCE, MDKScriptRuntime.LEVEL_LAYER)
+			if get_world_3d().direct_space_state.intersect_ray(query):
+				knocked = true
+				velocity.y = minf(velocity.y, KNOCKDOWN_SLAM_SPEED)
+		if knocked:
+			knock_down()
+			return
+	knock_damage = minf(knock_damage, KNOCKDOWN_DAMAGE)
+	knock_damage = maxf(knock_damage - KNOCKDOWN_DRAIN * delta, 0.0)
+
+
+## Knocks Kurt down (state 901): he stops firing, falls and gets up (`K_BANG`, `K_BFLIP`), and is
+## invulnerable for 3 seconds.
+func knock_down(p_push := Vector2.ZERO) -> void:
+	knock_damage = 0.0
+	invulnerable = KNOCKDOWN_INVULNERABILITY
+	push += p_push
+	firing = false
+	_gun_player.stop()
+	muzzle.visible = false
+	chute_open = false
+	_set_state(State.KNOCKED)
 
 
 ## Dead Kurt lies still while the skull fades in (`damp_control`), then the level restarts (the
@@ -238,7 +315,7 @@ func _update_items() -> void:
 		for i in 5:
 			if Input.is_action_just_pressed(StringName("item_%d" % (i + 1))) and i < inventory.slots.size():
 				inventory.selected = i
-	if not Input.is_action_just_pressed(&"item_use") or state in [State.THROW, State.DEAD]:
+	if not Input.is_action_just_pressed(&"item_use") or state in [State.THROW, State.DEAD, State.KNOCKED]:
 		return
 	if inventory.slots.is_empty():
 		return
@@ -257,7 +334,7 @@ func _update_items() -> void:
 ## Holding fire fires the chain gun (`damp_move`); the hits are done by the scripts runtime
 ## (`MDKScriptRuntime.fire_chain_gun()`).
 func _update_firing() -> void:
-	var fire := Input.is_action_pressed(&"fire") and health > 0 and state != State.THROW
+	var fire := Input.is_action_pressed(&"fire") and health > 0 and state not in [State.THROW, State.KNOCKED]
 	var super_gun := inventory.super_chain_gun > 0
 	if fire == firing and (not firing or super_gun == _gun_super):
 		return
@@ -361,6 +438,19 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 		_set_state(State.DEAD)
 		sprite.show_frame(sprites.get_animation("K_BANG"), 0)
 		return
+	if state == State.KNOCKED:
+		# `K_BANG` then `K_BFLIP`, one frame per tick; the push stops when he flips back up.
+		var flip := sprites.get_animation("K_BFLIP")
+		animation_frame += TICKS * delta
+		var frame := int(animation_frame)
+		if frame < animation.frame_count:
+			sprite.show_frame(animation, frame)
+			return
+		push = Vector2.ZERO
+		if frame - animation.frame_count < flip.frame_count:
+			sprite.show_frame(flip, frame - animation.frame_count)
+			return
+		_set_state(State.STILL)
 	if state == State.THROW and is_on_floor() and not animation_done:
 		# Kurt stands still while throwing; the item leaves his hand on frame 8.
 		var previous := int(animation_frame)

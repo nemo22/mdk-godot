@@ -9,8 +9,9 @@
 - Main menu with the original background, texts, music and sound (the original font isn't decoded).
 - Model and animation formats (models section and CMI models), model viewer.
 - Level viewer (`--viewer`) and model viewer (`--models`).
-- Scripts: bytecode decoder (every script of the game) and VM with 107 of the 251 opcodes; arena
-  scripts, DTI aliens, spawned objects, commands between objects.
+- Scripts: bytecode decoder (every script of the game) and VM with 202 of the 236 opcodes the levels
+  use; arena scripts, DTI aliens, spawned objects, commands between objects, partners, group hit
+  scripts.
 - Object movement like the original: spline paths, walking, flying, chasing, formations,
   projectiles, gravity, friction and collisions with the arena.
 - Doors (connectors), pickups falling with chutes, arena triangle groups (hidden/non-solid parts),
@@ -18,15 +19,17 @@
 - Kurt's chain gun: firing animations and sound, auto-aimed hits, weak parts, hit events, deaths
   and explosions; the super chain gun.
 - Pickups and the inventory, health, damage and death, the HUD (health and inventory).
-- Items: throwing, grenades, the decoy, the World's Most Interesting Bomb, blasts.
+- Items: throwing, grenades, the decoy, the World's Most Interesting Bomb, the tornado, the mortar,
+  the nuke, the seal and the bone, blasts (also on triangle groups).
+- Kurt knocked down by hits and pushes, screen shake and white flash.
 
 ## Next
 
-1. **Aliens and scripts**: effects (sparks, particles, debris), path planning around walls
-   (`plan_move`), automatic banking, chains, triangle group hits, the second arena seen through
-   open doors.
-2. **Weapons and sniper mode**: the other items (tornado, mortar, nuke, seal, super bone), sniper
-   mode, the rest of the HUD (boss bar, messages), saving and loading.
+1. **Aliens and scripts**: the last 34 opcodes (effects, lights, fans and wind, chains, cutscene
+   events), effects (sparks, particles, debris), path planning around walls (`plan_move`),
+   automatic banking, the second arena seen through open doors.
+2. **Weapons and sniper mode**: sniper mode and its ammo (Bones' air strike), the rest of the HUD
+   (boss bar, messages), saving and loading.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
 4. **Movement details**: ledge grab, slippery floors, conveyors, updrafts, camera roll, pushing Kurt
    away from walls instead of moving the camera closer, stopping on walls hit head-on.

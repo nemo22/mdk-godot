@@ -324,10 +324,43 @@ thrown item at a time, except decoys (types 1, 8, 9); while the World's Most Int
     animation and spins at 235°/s for 600 ticks (or until Kurt presses "use"), then plays it and
     blows up: blast of 450 (67 on Kurt) within 80 units, explosion ×3. Alien scripts react to it
     (`if_no_bomb`, `if_bomb_visible`, `move_to_bomb`).
-  - 3 tornado (0x40741c, sound `TORNADO`), 4 mortar (`SW_THUMP`, 0x43e690), 7 the nuke (the
-    `SW_KEY` pickup becomes `SW_NUKE`, 900 ticks), 8/9 seal and super bone.
+  - 3 tornado (0x43ee98, sound `TORNADO`): spins at 360°/s for 60 ticks, letting out a twister
+    (0x40741c) at once and at 45, 30 and 15 ticks left, then blows up (`object_kill`). See below.
+  - 4 mortar (0x43e690; it activates only on a floor): plays its `SW_THUMP` animation (121
+    frames) and pounds the ground on frames 28, 54, 64, 71, 77, 82 … 127 (table `0x491e4c`): each
+    thump shakes the screen (5) and hits every object of its arena without flags 0x1030 that isn't
+    an `XE` or `XF` (flyers): −4 health, hit event −1, hit type −3, the direction from Kurt, and +5
+    upwards velocity if it stands on a floor. From the 4th thump on, Kurt is knocked down
+    (`0x573b20` = 5) if he stands on a floor. At the end it blows up (`object_kill`).
+  - 7 the nuke (0x43efcc): the `SW_KEY` item turns into the `SW_NUKE` model and animation (from
+    frame 1, 900 ticks), with a full white flash (`0x573b68` = 255) and the looping sound `NUKE`.
+    While it plays the screen shakes (at least 3), and from frame 70 the screen turns white
+    (flash = (frame − 70) × 255 / (frames − 70)). Then doors within 50 units get door state bit
+    0x80, a blast of 200 on objects and groups and 19 on Kurt within 60 units (hit type −8), 16
+    debris particles and the `EXPLODE` sound.
+  - 8 seal and 9 super bone (0x43e980, 0x43ea84): they fly for 750 ticks (the seal rolls at
+    30°/s) and just stop. Once still they fall and play the arena's `XMT_LAND` animation. Unless
+    their script flag 1 is set (something got hold of them: level 5's `XGUNTAM` eats them), they
+    become pickups again (flag 0x200000) after 150 ticks, and a seal shrinks away (×0.9 per tick,
+    then `object_kill`) when its time is up; a bone stays.
 - The item animations (`SW_INTER`, `SW_DUM_I`, `SW_DUM_M`, `SW_THUMP`, `SW_NUKE`, `H150_I`,
   `H150_R`, `X_STRIKB`) are model animations stored in `TRAVSPRT.BNI`.
+- Types 0x80/0x81 are Bones' air strike (sniper mode; 0x81 drops `X_TOOTH` bombs of kind 5).
+
+### Twisters (0x40741c, 0x407774, 0x407974)
+
+Twisters are effects (the arena's effect list `arena+0x5c`, not objects), drawn as a textured
+ribbon along their last positions (0x439690).
+
+- For 2 seconds a twister spirals out of the tornado: its angle grows at 720°/s, and at angle a it
+  is at the tornado + (cos, sin)(a) × 15 × a/1440 and 15 × a/1440 higher, stopping 0.1 off walls,
+  moving at 200 units/s along the spiral.
+- At 1440° it splits: one twister for each object of the tornado's arena (and the other visible
+  arena) without flags 0x30, each chasing its object for 150 ticks: each tick its velocity keeps 90%
+  and gains 20 units/s towards the object's box centre; it bounces off walls (the velocity is
+  mirrored) and wind zones push it.
+- An object (alive, flags without 0x30) whose box contains a twister loses 2 health per tick, hit
+  event −1, direction from Kurt; it's killed at 0. The twister then loses an extra tick of life.
 
 ### Blasts (0x463a94)
 
@@ -341,7 +374,13 @@ thrown item at a time, except decoys (types 1, 8, 9); while the World's Most Int
   is −2 (or a destroyed weak part), with the blast's hit type.
 - **Kurt**: his distance (to his feet + 1) is doubled, or beyond the radius behind a wall; within
   the radius he's hurt by at most 15.
-- **Triangle groups** that react to hits get a hit of type 3 or 4 on their nearest triangle.
+- **Kurt**'s knock-down counter (`0x573b20`) is doubled after the hit: a blast knocks him down
+  from 3 damage.
+- **Triangle groups** with hit flags or a hit script, in Kurt's arena and the other visible one:
+  the first solid triangle of the group within the radius whose centre the blast reaches (or
+  whose ray hits another triangle of the same group: that point is used) gets a hit (0x40d560) of
+  kind 3 (4 when the blast doesn't count kills), `damage × (radius − distance) / radius`, with
+  the blast's hit type. One hit per group.
 
 ## Arena triangle groups
 
@@ -358,6 +397,24 @@ exist for groups 1–16). Scripts change groups at run time:
   group's counter (`arena+0xcc`, opcodes 162/163) and can run a script (0x40d560).
 - `group_state_near_player` (194) applies a state to the groups around the one under Kurt.
 
+### Group hits (0x40d560)
+
+`hit(arena, triangle, amount, kind, hit type, point, from, to)`. The kind is a bit mask of what
+hit: 1 Kurt's projectiles (0x462708), 2 the chain gun (amount = damage, hit type −1, −2 with the
+super chain gun), 3 Kurt's blasts, 4 other blasts, 8 Kurt himself (0x46634e, hit type −11), 0x10
+effects (0x45fec4, hit type −10). For a triangle of group g (1–16):
+
+- If the group's hit flags (`arena+0x6c`, opcode 168) share a bit with the kind: flag 0x80 shows
+  the group (group state op 3) and sets its bit in `arena+0x114`; 0x40 makes the hit count (an
+  amount of at least 1) whatever the mask; 0x20 makes the function return 2 (the chain gun then
+  shows other sparks).
+- If the group has a hit script (`arena+0x8c`, opcode 99) and its hit mask (`arena+0x7c`) shares a
+  bit with the kind (or flag 0x40): the counter `arena+0xcc` grows by the amount, the hit point and
+  direction go to globals `0x4d5374`/`0x4d5358`, and the script runs at once from its start in the
+  scratch object `0x57fc40` (0x45c9a0: cleared, arena set, `obj+0x21d` = the hit type, which
+  `if_hit_weapon` tests). Returns 1.
+
+Level 5 uses this for its fans: `if_hit_weapon -8` means only the nuke destroys them.
 ## Globals
 
 Globals used by the scripts and objects are listed in [scripts/notes_part2.md](scripts/notes_part2.md)
@@ -368,7 +425,8 @@ and [scripts/notes_part3.md](scripts/notes_part3.md). The main ones:
 | 0x5739c0 (`g_damp_position`) | Kurt's position; 0x5739f0 his yaw; 0x5739f4 his bounding box (min x, y, z, max x, y, z) |
 | 0x573a0c | Kurt's arena; 0x573a68 the other arena during a transition |
 | 0x57fc34, 0x57fc30 | the target of the aliens (Kurt or a decoy) and its yaw |
-| 0x574324 | Kurt's health; 0x573bd4 invulnerability time; 0x573b20 hurt flash |
+| 0x574324 | Kurt's health; 0x573bd4 invulnerability time; 0x573b20 knock-down counter |
+| 0x573aa8 | screen shake; 0x573b68 white flash; 0x573b70 red flash |
 | 0x573c24 | the World's Most Interesting Bomb (a decoy), if active |
 | 0x5742dc | option toggled by cheat codes (1 by default; opcode 232, BHOLE/BHOLE2) |
 | 0x573b4c | the 4 global script variables |

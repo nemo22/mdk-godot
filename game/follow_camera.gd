@@ -17,6 +17,12 @@ const AIR_PITCH_MAX := 40.0
 const AIR_PITCH_DECAY := 40.0
 ## Kurt's head height, from which the camera's line of sight is checked.
 const HEAD_HEIGHT := 5.5
+## Screen shake (`0x573aa8`): each tick above 1 the view is shifted by up to ±1.64 × the shake in
+## pixels of the 600×360 view (at most ±19 horizontally, ±59 vertically); it drains by 0.25 per tick.
+const SHAKE_SCALE := 16384.0 * 0.0001
+const SHAKE_LIMIT := Vector2(19.0, 59.0)
+const SHAKE_DRAIN := 0.25
+const VIEW_HEIGHT := 360.0
 
 @export var target: Kurt
 @export var level: Level
@@ -25,11 +31,19 @@ var arena_pitch := 4.0
 var look_offset := 0.0
 var air_pitch := 0.0
 var air_time := 0.0
+var shake := 0.0
+var _shake_offset := Vector2.ZERO
+var _shake_time := 0.0
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		look_offset += event.screen_relative.y * MOUSE_SENSITIVITY
+
+
+## Shakes the screen at least this much (`0x467f7c`, opcode 135).
+func raise_shake(amount: float) -> void:
+	shake = maxf(shake, amount)
 
 
 func _process(delta: float) -> void:
@@ -64,4 +78,26 @@ func _process(delta: float) -> void:
 		position = hit.position + (head - position).normalized() * 0.3
 
 	var look := facing * cos(pitch) - Vector3.UP * sin(pitch)
-	global_transform = Transform3D(Basis.looking_at(look, Vector3.UP), position)
+	var view := Basis.looking_at(look, Vector3.UP)
+	_update_shake(delta)
+	if _shake_offset != Vector2.ZERO:
+		# Shifting the view by some pixels is turning the camera by as many pixels' worth of angle.
+		var per_pixel := deg_to_rad(fov) / VIEW_HEIGHT
+		view = view * Basis.from_euler(Vector3(_shake_offset.y * per_pixel, -_shake_offset.x * per_pixel, 0.0))
+	global_transform = Transform3D(view, position)
+
+
+func _update_shake(delta: float) -> void:
+	if shake <= 0.0:
+		_shake_offset = Vector2.ZERO
+		return
+	_shake_time += delta
+	while _shake_time >= MDKScriptRuntime.TICK:
+		_shake_time -= MDKScriptRuntime.TICK
+		_shake_offset = Vector2.ZERO
+		if shake > 1.0:
+			var amplitude := shake * SHAKE_SCALE
+			_shake_offset = Vector2(randf_range(-amplitude, amplitude), randf_range(-amplitude, amplitude)).clamp(-SHAKE_LIMIT, SHAKE_LIMIT).round()
+		shake -= SHAKE_DRAIN
+		if shake < SHAKE_DRAIN:
+			shake = 0.0

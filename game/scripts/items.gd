@@ -14,15 +14,25 @@ const FLAG_ACTIVE := 0x4000
 const THROW_SPEED := 25.0
 const THROW_UP_SPEED := 15.0
 const GRENADE_SPEED_FACTOR := 3.0
-## Hit types of blasts (`obj+0x21d`).
+## Hit types (`obj+0x21d`, `if_hit_weapon`).
+const HIT_MORTAR := -3
 const HIT_GRENADE := -7
+const HIT_NUKE := -8
 const HIT_BOMB := -9
+## The mortar (`SW_THUMP`) pounds the ground on these frames of its animation (`0x491e4c`).
+const MORTAR_THUMPS := [28, 54, 64, 71, 77, 82, 87, 92, 97, 102, 107, 112, 117, 122, 127]
+## Flying aliens the mortar doesn't hurt.
+const MORTAR_SPARED := ["XE", "XF"]
+## Doors this close to the nuke (squared distance) are blown open.
+const NUKE_DOOR_RANGE_SQUARED := 2500.0
 
 var runtime: MDKScriptRuntime
 var dt := 1.0 / 30.0
 ## The World's Most Interesting Bomb (`0x573c24`) and the decoy (`0x573c20`), when out.
 var bomb: MDKObject
 var decoy: MDKObject
+## Twisters of tornados.
+var twisters: Array[MDKTwister] = []
 var _animations := {}
 
 
@@ -90,10 +100,17 @@ func use_item() -> void:
 
 ## Updates a thrown item after it moved (0x43deac).
 func update_thrown(obj: MDKObject) -> void:
+	if obj.flags & MDKObject.FLAG_COLLECTED:
+		# A seal or bone Kurt took back shrinks away like a pickup.
+		runtime.behaviors.update_pickup(obj)
+		return
 	if obj.flags & FLAG_ACTIVE:
 		_update_active(obj)
 		return
 	obj.model_scale = minf(obj.model_scale + dt * 3.0, 1.0)
+	# The seal rolls over while it flies.
+	if obj.thrown_kind == KurtInventory.Item.SEAL:
+		obj.roll = fposmod(obj.roll + dt * 30.0, 360.0)
 	# Grenades also stop on aliens (0x43eb48).
 	if _hits_object(obj):
 		obj.contact_flags |= 0x10
@@ -150,21 +167,47 @@ func _activate(obj: MDKObject) -> void:
 			bomb = obj
 			runtime.play_sound_at("WMIB", obj.mdk_position)
 		KurtInventory.Item.TORNADO:
+			# The tornado spins for 2 seconds, letting out a twister every half second.
+			add_twister(MDKTwister.new(runtime, obj.arena, obj.mdk_position, 0.0))
 			obj.item_ticks = 60
+			obj.parameter = 45
 			runtime.play_sound_at("TORNADO", obj.mdk_position)
 		KurtInventory.Item.MORTAR:
 			obj.restart_animation(get_animation("SW_THUMP"), false)
 			obj.item_ticks = 30
+			obj.parameter = 0.0
+			_update_mortar(obj)
 		KurtInventory.Item.KEY:
-			# The "key" is the nuke (`SW_NUKE`).
+			# The "key" becomes the nuke (`SW_NUKE`): a white flash, its animation, then the blast.
+			var nuke := runtime._find_model(obj.arena, "SW_NUKE")
+			if nuke:
+				obj.setup("SW_NUKE", nuke, runtime._get_resolver(obj.arena))
+				obj.update_transform()
 			obj.item_ticks = 900
 			obj.restart_animation(get_animation("SW_NUKE"), false)
+			obj.animation_time = 1.0
+			runtime.kurt.white_flash = maxf(runtime.kurt.white_flash, 255.0)
+			runtime.set_loop_sound(obj, "NUKE")
 
 
-## Active items (0x43e860 decoy, 0x43f18c bomb, …). Only the decoy and the bomb are done; the
-## others just vanish when their time is up.
+## Active items (0x43e860 decoy, 0x43f18c bomb, 0x43e690 mortar, 0x43efcc nuke, 0x43e980 seal,
+## 0x43ea84 bone, 0x43ee98 tornado).
 func _update_active(obj: MDKObject) -> void:
 	match obj.thrown_kind:
+		KurtInventory.Item.TORNADO:
+			obj.yaw = fposmod(obj.yaw + dt * 360.0, 360.0)
+			obj.item_ticks -= 1
+			if obj.item_ticks < obj.parameter:
+				obj.parameter -= 15
+				add_twister(MDKTwister.new(runtime, obj.arena, obj.mdk_position, obj.yaw))
+			if obj.item_ticks <= 0:
+				runtime.kill(obj)
+		KurtInventory.Item.MORTAR:
+			_update_mortar(obj)
+		KurtInventory.Item.KEY:
+			_update_nuke(obj)
+		KurtInventory.Item.SEAL, KurtInventory.Item.SUPER_BONE:
+			_update_seal(obj)
 		KurtInventory.Item.INTERESTING_BOMB:
 			bomb = obj
 			if obj.animation_end_frame == 0:
@@ -188,10 +231,105 @@ func _update_active(obj: MDKObject) -> void:
 				runtime.remove(obj)
 
 
+func add_twister(twister: MDKTwister) -> void:
+	twisters.push_back(twister)
+	runtime.add_child(twister)
+
+
+## Moves the twisters (one tick).
+func update_twisters() -> void:
+	for twister in twisters.duplicate():
+		if twister.arena != runtime.current_arena:
+			continue
+		if not twister.tick(dt):
+			twisters.erase(twister)
+			twister.queue_free()
+
+
+## The mortar (0x43e690) pounds the ground on the frames of `MORTAR_THUMPS`: the screen shakes and
+## every alien of the arena (flying ones spared) loses 4 health, and is thrown up if it stands. From
+## the fourth thump on, Kurt is knocked down if he stands on a floor. It blows up at the end.
+func _update_mortar(obj: MDKObject) -> void:
+	if not obj.animation or obj.is_animation_done():
+		runtime.kill(obj)
+		return
+	var thump := int(obj.parameter)
+	if thump >= MORTAR_THUMPS.size() or obj.animation_frame < MORTAR_THUMPS[thump]:
+		return
+	thump += 1
+	obj.parameter = thump
+	if thump >= 4 and runtime.kurt.is_on_floor():
+		runtime.kurt.knock_damage = Kurt.KNOCKDOWN_DAMAGE
+	runtime.raise_shake(5.0)
+	for other in runtime.objects.duplicate():
+		if other == obj or other.dead or other.arena != obj.arena or other.flags & 0x1030 or other.type_name.to_upper() in MORTAR_SPARED:
+			continue
+		if other.contact_flags & MDKObject.CONTACT_FLOOR:
+			other.velocity.z += 5.0
+		var center := runtime.get_world_bounds(other).get_center()
+		var direction := rad_to_deg(atan2(center.y - runtime.kurt_position.y, center.x - runtime.kurt_position.x))
+		if other.health < 65000:
+			other.health -= 4
+		other.hit_event = -1
+		other.hit_type = HIT_MORTAR
+		other.hit_direction = direction
+		if other.health <= 0:
+			runtime.kill(other, direction + 180.0)
+
+
+## The nuke (0x43efcc) shakes the screen while its animation plays (with a white flash towards the
+## end), then blows open the doors nearby and blasts everything within 60 units.
+func _update_nuke(obj: MDKObject) -> void:
+	if obj.animation and not obj.is_animation_done():
+		runtime.raise_shake(3.0)
+		# The screen turns white from frame 70 to the end.
+		if obj.animation_frame > 70:
+			var flash := roundf((obj.animation_frame - 70) * 255.0 / maxi(obj.animation.frame_count - 70, 1))
+			runtime.kurt.white_flash = maxf(runtime.kurt.white_flash, flash)
+		return
+	var center := obj.mdk_position
+	for other in runtime.objects:
+		if not other.dead and other.flags & MDKObject.FLAG_DOOR and other.mdk_position.distance_squared_to(center) < NUKE_DOOR_RANGE_SQUARED:
+			other.door_state = (other.door_state & 0x1F) | 0x80
+	blast(center, 200, 60.0, 6, HIT_NUKE, null)
+	blast(center, 19, 60.0, 1, HIT_NUKE, null)
+	runtime.play_sound_at("EXPLODE", center)
+	runtime.spawn_explosion(obj.arena, center, 3.0)
+	runtime.remove(obj)
+
+
+## A thrown seal or bone (0x43e980, 0x43ea84) plays `XMT_LAND` once it lands. Unless something has
+## got hold of it (its script flag 1), Kurt can take it back after 5 seconds; a seal shrinks away
+## after 25.
+func _update_seal(obj: MDKObject) -> void:
+	if not obj.script_flags & 1:
+		if obj.item_ticks < 601:
+			obj.flags |= MDKObject.FLAG_PICKUP
+		if obj.thrown_kind == KurtInventory.Item.SEAL:
+			obj.item_ticks -= 1
+			if obj.item_ticks < 1:
+				obj.model_scale *= 0.9
+				obj.update_transform()
+				if obj.model_scale < 0.1:
+					runtime.kill(obj)
+				return
+		elif obj.item_ticks >= 601:
+			obj.item_ticks -= 1
+	else:
+		obj.model_scale = 1.0
+		obj.flags &= ~MDKObject.FLAG_PICKUP
+	if not obj.animation and not obj.script_flags & 2:
+		obj.roll = 0.0
+		obj.script_flags |= 2
+		obj.flags |= MDKObject.FLAG_GRAVITY | MDKObject.FLAG_COLLIDES
+		obj.flags &= ~MDKObject.FLAG_LOOP
+		obj.restart_animation(runtime.find_arena_animation(obj.arena, "XMT_LAND"), false)
+
+
 ## A blast (0x463a94) of `damage` within `radius` around `center`. `targets`: 1 Kurt, 2 objects,
 ## 4 arena triangle groups (not done yet). Damage falls off with the distance to a target's box
 ## (minus half its size), and walls stop it.
-func blast(center: Vector3, damage: int, radius: float, targets: int, hit_type: int, source: MDKObject) -> void:
+func blast(center: Vector3, damage: int, radius: float, targets: int, hit_type: int, source: MDKObject, count_kills := true) -> void:
 	if targets & 2:
 		for obj in runtime.objects.duplicate():
 			if obj.dead or obj.arena != runtime.current_arena or obj.health == 0 or obj.flags & (MDKObject.FLAG_NOT_SOLID | MDKObject.FLAG_NOT_TARGET):
@@ -246,6 +384,35 @@ func blast(center: Vector3, damage: int, radius: float, targets: int, hit_type: 
 		distance *= 2.0
 		if distance < radius:
 			runtime.kurt.hurt(mini(roundi(damage * (1.0 - distance / radius)), 15))
+			# Blasts knock Kurt down twice as easily.
+			runtime.kurt.knock_damage *= 2.0
+	if targets & 4:
+		_blast_groups(center, damage, radius, hit_type, MDKScriptRuntime.HIT_BLAST if count_kills else MDKScriptRuntime.HIT_OTHER_BLAST)
+
+
+## A blast on the triangle groups that react to hits (0x463a94): each gets one hit, on the first
+## of its triangles within the radius that the blast reaches (its centre, or another triangle of the
+## group in the way), of the damage less the falloff.
+func _blast_groups(center: Vector3, damage: int, radius: float, hit_type: int, kind: int) -> void:
+	var arena_name := runtime.current_arena
+	var state := runtime.get_arena_state(arena_name)
+	var origin := center + Vector3(0, 0, 1)
+	for i in 16:
+		if not state.group_hit_flags[i] and not state.group_hit_scripts[i]:
+			continue
+		for triangle_center in runtime.level.get_group_centers(arena_name, i + 1):
+			if origin.distance_squared_to(triangle_center) > radius * radius:
+				continue
+			var point := triangle_center
+			var hit := runtime.raycast(origin, triangle_center)
+			if not hit.is_empty():
+				var collider: Object = hit.collider
+				if not collider.has_meta(&"group") or collider.get_meta(&"group") != i + 1:
+					continue
+				point = MDKScriptRuntime.to_mdk(hit.position)
+			var distance := origin.distance_to(point)
+			runtime.hit_group(arena_name, i + 1, roundi(damage * (radius - distance) / radius), kind, hit_type)
+			break
 
 
 ## Damage of a blast on a box (0x463958): `Vector2(damage, distance)`; 0 beyond the radius or

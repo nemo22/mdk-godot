@@ -119,9 +119,24 @@ by 1 unit, and 5 downwards. Taken pickups get flags 0x41000 and vanish in 30 tic
 - Damage is ignored while Kurt is invulnerable (`0x573bd4`), dead or in some states; it's 2/3 on easy
   (at least 1) and doubled on hard. Each hit adds `damage × 25` to the red flash `0x573b70`
   (kept within 75–180, −4 per tick).
+- **Knocked down**: each hit also adds its damage to `0x573b20` (blasts then double it; the mortar
+  and `set_hurt_flash` set it), which drains by 2 per second and is capped at 5. At 5, Kurt is
+  knocked down (state 901, priority 9): `K_BANG` then `K_BFLIP`, one frame per tick, the push of
+  `push_kurt` (`0x573c08`, slowing by 0.1 u/tick per tick) stopping when the flip starts. He can't
+  move, fire or use items, and he is invulnerable for 3 seconds (`0x573bd4`). In the air it only
+  happens within 13 units above a floor (a ray down), and his vertical speed becomes at most
+  −64 u/s.
 - At 0 health, once on the floor, Kurt plays `K_BANG` (state 1002) and holds its last frame; the
   `SKULL` image fades in at the centre of the view (`0x573b70` going up to 255), then the game loads
   the last saved game (`LASTGAME`).
+
+## Screen effects
+
+- **Shake** (`0x573aa8`, raised by `raise_573aa8`/0x467f7c, the mortar, the nuke): each frame above
+  1 the 3D view is drawn shifted by random offsets of ±1.64 × shake pixels (rand − 0x4000 ×
+  shake × 0.0001, at most ±19 horizontally and ±59 vertically); it drains by 0.25 per tick.
+- **White flash** (`0x573b68`, `screen_flash`, the nuke) and **red flash** (`0x573b70`, hits):
+  they tint the palette (0x470a88); the white one fades by 4 per tick.
 
 ## HUD (0x41e128)
 
