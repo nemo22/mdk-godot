@@ -589,6 +589,43 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 				link.move_command = 30
 				link.leader = obj
 
+		159:  # spawn_box: [[position mode, x, y, z], size x, y, z, texture, script]
+			var where: Array = o[0]
+			var point := obj.mdk_position
+			if where[0] == 1:
+				var offset := Vector2(where[1], where[2]).rotated(deg_to_rad(obj.yaw))
+				point += Vector3(offset.x, offset.y, where[3])
+			elif where[0] == 2:
+				point = Vector3(where[1], where[2], where[3])
+			runtime.spawn_box(obj, point, Vector3(o[1], o[2], o[3]), o[4], o[5])
+
+		133:  # arena_texture_frame: [texture, mode, value]; the levels only use mode 1 (frames per second)
+			if o[1] == 1:
+				var material := runtime.level.get_texture_material(obj.arena, o[0]) as ShaderMaterial
+				if material:
+					material.set_shader_parameter(&"frames_per_second", o[2])
+
+		131:  # special_event: cutscenes and the end of the level
+			runtime.special_event(obj, o[0])
+
+		226:  # jump_to: [pivot x, y, z, angular speed, gain], starts swinging below the pivot
+			obj.swing_pivot = Vector3(o[0], o[1], o[2])
+			obj.swing_speed = o[3]
+			obj.swing_gain = o[4]
+			obj.swing_yaw = obj.yaw
+			obj.swing_length = obj.swing_pivot.z - obj.mdk_position.z
+			obj.flags |= MDKObject.FLAG_SWINGING
+
+		242:  # set_2d0_block: [[count, 4 points]]: lines from reference points 1–4 to the points
+			var block: Array = o[0]
+			if block[0] == 0:
+				obj.rope_mask = 0
+			else:
+				obj.rope_color = 1
+				obj.rope_mask = 0xFF
+				for i in 4:
+					obj.rope_points[i] = Vector3(block[1 + i * 3], block[2 + i * 3], block[3 + i * 3])
+
 		224:  # wind_zone: [enable] or [enable, yaw, speed]
 			var wind: Array = o[0]
 			runtime.wind_zone(obj.arena, wind[0] != 0, wind[1] if wind.size() > 2 else 0.0,

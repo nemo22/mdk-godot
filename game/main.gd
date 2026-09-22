@@ -16,6 +16,8 @@
 ##   --profile=seconds         Print performance and script statistics after this long, then quit.
 ##   --no-scripts              Don't run the level scripts (no objects or aliens).
 ##   --town=seconds            The minecrawler flattens the town after this long (for tests).
+##   --spawn-box=TEXTURE       Create a `spawn_box` object showing that texture in front of Kurt.
+##   --event=N                 Run `special_event` N after the delay (cutscenes, end of level).
 extends Node3D
 
 @onready var level: Level = $Level
@@ -61,14 +63,23 @@ func _ready() -> void:
 		scripts.messages = hud.messages
 		scripts.setup(level, kurt)
 		hud.scripts = scripts
+		$FollowCamera.scripts = scripts
+		scripts.level_ended.connect(_on_level_ended)
 		if args.has("town"):
 			scripts.town_ticks = roundi(float(args.town) * 30.0)
+		if args.has("spawn-box"):
+			var facing := MDKScriptRuntime.to_mdk(kurt.get_facing())
+			var point := MDKScriptRuntime.to_mdk(kurt.global_position) + facing * 20.0 + Vector3(0, 0, 5)
+			scripts.spawn_box(scripts.get_arena_state(level.get_arena_at(kurt.global_position)).controller,
+					point, Vector3(4, 4, 4), args["spawn-box"], 0)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 	if args.has("fire"):
 		Input.action_press(&"fire")
 	if args.has("delay"):
 		await get_tree().create_timer(float(args.delay)).timeout
+	if args.has("event"):
+		scripts.special_event(scripts.get_arena_state(scripts.current_arena).controller, int(args.event))
 	if args.has("use"):
 		Input.action_press(&"item_use")
 		await get_tree().create_timer(0.1).timeout
@@ -83,6 +94,16 @@ func _ready() -> void:
 		Args.screenshot_and_quit(get_tree(), args.screenshot, 20)
 	if args.has("profile"):
 		_profile(float(args.profile))
+
+
+## The level is over: go on to the next one after a while, or back to the menu after the last one.
+func _on_level_ended(game_over: bool) -> void:
+	await get_tree().create_timer(5.0).timeout
+	if game_over or level.number >= 8:
+		get_tree().change_scene_to_file("res://game/menu/main_menu.tscn")
+	else:
+		GameState.level = level.number + 1
+		get_tree().reload_current_scene()
 
 
 ## Kurt died: play the level again (the original loads the last saved game).

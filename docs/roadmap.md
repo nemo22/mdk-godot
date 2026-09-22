@@ -10,7 +10,7 @@
   in the original ones).
 - Model and animation formats (models section and CMI models), model viewer.
 - Level viewer (`--viewer`) and model viewer (`--models`).
-- Scripts: bytecode decoder (every script of the game) and VM with 212 of the 236 opcodes the levels
+- Scripts: bytecode decoder (every script of the game) and VM with 220 of the 236 opcodes the levels
   use; arena scripts, DTI aliens, spawned objects, commands between objects, partners, group hit
   scripts.
 - Object movement like the original: spline paths, walking, flying, chasing, formations,
@@ -27,11 +27,13 @@
   timer.
 - Fans (updrafts) with their particles, the wind zones and Kurt sliding on his back (level 6),
   chains of objects and waypoints.
+- Swinging objects and their ropes, `spawn_box` flames, animated wall speeds, the cutscenes (states
+  and camera shots) and the end of a level.
 
 ## Next
 
-1. **Aliens and scripts**: the last 24 opcodes (effects, lights, debris, swinging objects,
-   cutscene events), effects (sparks, particles, debris), path planning around walls (`plan_move`),
+1. **Aliens and scripts**: the last 16 opcodes (effects, lights, debris, rolling objects, bullet
+   holes), the full-screen strike of Bones and the end of level break-up, effects (sparks, particles, debris), path planning around walls (`plan_move`),
    automatic banking, the second arena seen through open doors.
 2. **Weapons and sniper mode**: sniper mode and its ammo (Bones' air strike), saving and loading.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.

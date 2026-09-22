@@ -26,6 +26,8 @@ const VIEW_HEIGHT := 360.0
 
 @export var target: Kurt
 @export var level: Level
+## Cutscenes take over the camera.
+var scripts: MDKScriptRuntime
 
 var arena_pitch := 4.0
 var look_offset := 0.0
@@ -47,6 +49,9 @@ func raise_shake(amount: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if scripts and scripts.cutscene:
+		global_transform = scripts.get_cutscene_camera()
+		return
 	var feet := target.get_global_transform_interpolated().origin
 	# The arena pitch eases towards the pitch of the arena Kurt is in (0.85·old + 0.15·new per tick).
 	arena_pitch = lerpf(level.get_camera_pitch(feet), arena_pitch, pow(0.85, delta * 30.0))

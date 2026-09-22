@@ -43,6 +43,12 @@ class MaterialResolver:
 		return null
 
 
+	## The material made for a texture, or `null` if no triangle uses it.
+	func get_texture_material(texture_name: String) -> Material:
+		var texture := find_texture(texture_name)
+		return _texture_materials.get(texture) if texture else null
+
+
 	## Returns the Godot material for a triangle material value (see `MDKArena.triangle_materials`),
 	## or `null` if the triangle shouldn't be drawn.
 	func get_material(value: int, material_names: Array[String]) -> Material:

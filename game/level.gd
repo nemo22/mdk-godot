@@ -212,6 +212,11 @@ func get_start_yaw() -> float:
 	return deg_to_rad(dti.start_angle - 90.0)
 
 
+## The material of an arena's texture (animated walls such as `M_COMM`), or `null`.
+func get_texture_material(arena_name: String, texture_name: String) -> Material:
+	return _resolvers[arena_name].get_texture_material(texture_name) if _resolvers.has(arena_name) else null
+
+
 ## Returns a sprite animation of the level's archives (`LEVELnS.SNI` holds Kurt's extra frames),
 ## or `null`.
 func get_sprite_animation(entry_name: String) -> MDKSpriteAnimation:

@@ -3077,7 +3077,7 @@
   "mnemonic": "special_130",
   "operands": [],
   "flow": "next",
-  "summary": "Calls 0x45d140(obj) (large routine, not analysed).",
+  "summary": "0x45d140(obj): stamps a bullet hole (BHOLE/BHOLE2) onto the texture of the face hit last by a projectile (obj+0x21c part + 1, obj+0x220 face, obj+0x210 point). See engine.md, Bullet holes.",
   "fields": [],
   "helpers": [
    "0x45d140 unknown"
@@ -3094,7 +3094,7 @@
    }
   ],
   "flow": "next",
-  "summary": "event > 50: 0x477cf4(obj, event) (level/cutscene events 0x33, 0x34, 0x35, 0x37, 0x3d, 0x51, 0x5b, 0x5c, 0x5d ...); otherwise global 0x573c80 = -1.",
+  "summary": "event > 50: 0x477cf4(obj, event), cutscenes (0x33, 0x34, 0x35, 0x37, 0x3d, 0x51, 0x5b, 0x5c, 0x5d); otherwise global 0x573c80 = -1, the end of the level. See engine.md, Cutscenes.",
   "fields": [
    "0x573c80"
   ],
@@ -5803,7 +5803,7 @@
    }
   ],
   "flow": "next",
-  "summary": "Sets up a jump/ballistic move: obj+0x1c..0x24 = (x,y,z), obj+0x302 = p0, obj+0x30a = p1, obj+0x30e = current yaw, obj+0x306 = z - obj.z, and sets bit 0x40 of obj+0x14a.",
+  "summary": "Swings the object on a rope below the pivot (x, y, z): obj+0x1c pivot, obj+0x302 angular speed, obj+0x30a gain, obj+0x306 rope length = pivot z - z, obj+0x30e = yaw, flag 0x400000 (updated by 0x43cfe8). See engine.md, Swinging objects.",
   "fields": [
    "obj+0x1c",
    "obj+0x20",
@@ -6329,7 +6329,7 @@
    }
   ],
   "flow": "next",
-  "summary": "enable != 0: obj+0x2d0 = 1, obj+0x2d1 = 0xFF and the 12 floats go to obj+0x2d2..obj+0x2fe; enable == 0: obj+0x2d1 = 0.",
+  "summary": "Ropes: count 0 clears obj+0x2d1; otherwise obj+0x2d0 = 1 (palette colour), obj+0x2d1 = 0xFF and 4 points at obj+0x2d2, drawn as lines from the model's reference points 1-4 to the non-zero points.",
   "fields": [
    "obj+0x2d0",
    "obj+0x2d1",

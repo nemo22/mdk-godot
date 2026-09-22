@@ -27,6 +27,8 @@ const FLAG_COLLECTED := 0x40000
 const FLAG_DOOR := 0x100000
 const FLAG_PICKUP := 0x200000
 const FLAG_PATH_PUSHES := 0x8000000
+## Swings on a rope (`jump_to`, opcode 226; updated by 0x43cfe8).
+const FLAG_SWINGING := 0x400000
 const FLAG_BOUNCES := 0x20000000
 const FLAG_PATH_ONCE := 0x400
 ## The path speed follows Kurt's distance ahead (opcode 164).
@@ -168,6 +170,20 @@ var thrown_kind := 0
 var item_ticks := 0
 ## Blasts farther than this don't hurt the object (`obj+0x2c4`, opcode 177).
 var blast_range := 1000.0
+## Swinging (opcode 226): pivot (`obj+0x1c`), angular speed (`obj+0x302`), gain (`obj+0x30a`),
+## rope length (`obj+0x306`) and the yaw the swing plane turns towards (`obj+0x30e`).
+var swing_pivot := Vector3()
+var swing_speed := 0.0
+var swing_gain := 0.0
+var swing_length := 0.0
+var swing_yaw := 0.0
+## Lines drawn from the object (the `obj+0x2d0` block): palette colour, and a mask: 0xFF joins
+## reference points 1–4 to the non-zero `rope_points` (opcode 242); otherwise bits 0 and 1 are the
+## lines `rope_points[0]`→`[1]` and `[2]`→`[3]` (the swing's rope).
+var rope_color := 0
+var rope_mask := 0
+var rope_points := PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])
+var _rope_mesh: MeshInstance3D
 ## Object carried along (a pickup's chute).
 var attached: MDKObject
 
@@ -371,6 +387,45 @@ func get_pose_bounds() -> AABB:
 ## Updates the body Kurt collides with (`damp_collide_move` tests Kurt against the boxes of the
 ## visible parts of objects that are alive and don't have flag 0x10 or 0x800; doors skip their
 ## `LOCK` parts). Kurt can stand on the boxes and moving ones carry him.
+## Redraws the rope lines (`arena_build_drawlist` 0x4185f0 draws them as lines; the pair lines
+## start 5 units higher).
+func update_ropes() -> void:
+	if rope_mask == 0:
+		if _rope_mesh:
+			_rope_mesh.visible = false
+		return
+	if not _rope_mesh:
+		_rope_mesh = MeshInstance3D.new()
+		_rope_mesh.top_level = true
+		_rope_mesh.mesh = ImmediateMesh.new()
+		var material := StandardMaterial3D.new()
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.albedo_color = _resolver.palette.get_color(rope_color) if _resolver else Color.BLACK
+		_rope_mesh.material_override = material
+		add_child(_rope_mesh)
+	_rope_mesh.visible = true
+	_rope_mesh.global_transform = Transform3D.IDENTITY
+	var mesh: ImmediateMesh = _rope_mesh.mesh
+	mesh.clear_surfaces()
+	var lines := PackedVector3Array()
+	if rope_mask == 0xFF:
+		for i in 4:
+			if rope_points[i] != Vector3.ZERO:
+				lines.push_back(get_reference_point(i + 1))
+				lines.push_back(rope_points[i])
+	else:
+		for i in 2:
+			if rope_mask & (1 << i):
+				lines.push_back(rope_points[i * 2] + Vector3(0.0, 0.0, 5.0))
+				lines.push_back(rope_points[i * 2 + 1])
+	if lines.is_empty():
+		return
+	mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for point in lines:
+		mesh.surface_add_vertex(MDKMeshBuilder.to_godot(point))
+	mesh.surface_end()
+
+
 func update_body() -> void:
 	var solid := model != null and not dead and health != 0 and not flags & (FLAG_NOT_SOLID | FLAG_NOT_SOLID_2)
 	if not solid:

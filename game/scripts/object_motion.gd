@@ -44,6 +44,8 @@ func update(obj: MDKObject) -> void:
 	_update_command(obj)
 	if obj.dead:
 		return
+	if obj.flags & MDKObject.FLAG_SWINGING:
+		_swing(obj)
 	if obj.flags & MDKObject.FLAG_GRAVITY:
 		obj.velocity.z -= obj.gravity * dt
 		_updraft(obj)
@@ -66,6 +68,7 @@ func update(obj: MDKObject) -> void:
 	obj.previous_position = obj.mdk_position
 	obj.update_transform()
 	obj.update_body()
+	obj.update_ropes()
 
 
 # Spline paths: `u32 key count`, then keys of 40 bytes: `s32 frame`, position, in tangent and out
@@ -254,6 +257,32 @@ func _update_chain(link: MDKObject) -> void:
 		current.yaw = fposmod(leader.yaw + 90.0 * i, 360.0)
 		current.mdk_position += previous.get_reference_point(1) - current.get_reference_point(0)
 		previous = current
+
+
+## A pendulum (0x43cfe8, flag 0x400000 set by `jump_to`): the pitch swings by
+## `ω −= sin θ·k·t, θ += ω·k·t` (t in ticks) and the object hangs on its rope below the pivot, in the
+## vertical plane of its yaw. At each turning point the plane turns towards Kurt by at most 15°
+## (folded to ±90°: either side will do), at 10° per second.
+func _swing(obj: MDKObject) -> void:
+	var old_speed := obj.swing_speed
+	obj.swing_speed -= sin(deg_to_rad(obj.pitch)) * obj.swing_gain * ticks
+	obj.pitch += obj.swing_speed * obj.swing_gain * ticks
+	var angle := deg_to_rad(obj.pitch)
+	var heading := Vector2.from_angle(deg_to_rad(obj.yaw))
+	obj.mdk_position = obj.swing_pivot + Vector3(heading.x * sin(angle), heading.y * sin(angle), -cos(angle)) * obj.swing_length
+	if obj.swing_speed * old_speed <= 0.0:
+		obj.yaw = fposmod(obj.yaw, 360.0)
+		var diff := wrapf(obj.yaw_to(runtime.target_position) - obj.yaw, -180.0, 180.0)
+		if diff < -90.0:
+			diff += 180.0
+		elif diff > 90.0:
+			diff -= 180.0
+		obj.swing_yaw = obj.yaw + clampf(diff, -15.0, 15.0)
+	obj.yaw = move_toward(obj.yaw, obj.swing_yaw, 10.0 * dt)
+	obj.rope_color = 1
+	obj.rope_mask = 1
+	obj.rope_points[0] = obj.mdk_position
+	obj.rope_points[1] = obj.swing_pivot
 
 
 ## Turns the object towards a point by at most `TURN_SPEED` × dt. Returns the angle that was

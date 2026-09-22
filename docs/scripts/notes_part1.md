@@ -185,7 +185,7 @@ frame (death) but do fall through in the stream.
   0x402fd8 `sound_play_2d_ex(snd, restart)`
 - effects: 0x405138 `effect_alloc`, 0x405250 `effect_free`, 0x4067b8 `effect_attach`, 0x406434 `spawn_effect_a`,
   0x4052d4 `effect_init_b`, 0x406b3c `spawn_particle(template, vel, list, life)`
-- 0x477cf4 `special_event(obj, n)`; 0x45d140 (not analysed); 0x467f7c `max_573aa8`
+- 0x477cf4 `special_event(obj, n)`; 0x45d140 bullet holes (see engine.md); 0x467f7c `max_573aa8`
 - 0x40a2d0 `fatal_error`: really a debug log (writes only when 0x5742f8 is set)
 
 ## Globals

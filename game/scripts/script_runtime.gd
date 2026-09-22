@@ -86,6 +86,30 @@ var bar_health := 0
 var bar_max := 0
 ## Ticks left before the minecrawler flattens the town (`0x574270`, 0x4240c4); none on the last
 ## level.
+## Cutscene state (`0x573c60`, set by `special_event`): 0 = none.
+const CUTSCENE_DOG := 0x34
+const CUTSCENE_ALL := 0x3d
+const CUTSCENE_STRIKE := 0x47
+const CUTSCENE_END := 0x51
+const CUTSCENE_ALL_FLAGGED := 0x5b
+const CUTSCENE_BOSS := 0x5d
+## The only objects that run in cutscenes below `CUTSCENE_ALL` (0x47868c).
+const CUTSCENE_TYPES := ["XM5_FLAP", "XBN", "BOLT", "BIGBOLT", "SW_SBONE", "SW_SEAL"]
+var cutscene := 0
+var cutscene_target: MDKObject
+## The cutscene camera (0x599920…0x599940): shot, yaw (`90° − heading`), pitch, distance to the
+## target, stored position and the blend timer in ticks.
+var camera_mode := 0
+var camera_yaw := 0.0
+var camera_pitch := 0.0
+var camera_distance := 0.0
+var camera_position := Vector3()
+var camera_timer := 0
+var _camera_point := Vector3()
+## The level is over (`0x573b60`).
+var level_over := false
+## A level ended (`special_event` ≤ 50), or the whole game (event 81).
+signal level_ended(game_over: bool)
 var town_ticks := 0
 var current_arena := ""
 var objects: Array[MDKObject] = []
@@ -98,6 +122,8 @@ var _previous_kurt_position := Vector3()
 var _time := 0.0
 var _tick_usec := 0
 var _tick_count := 0
+var _box_sprites: Array[Sprite3D] = []
+var _box_time := 0.0
 
 
 func setup(p_level: Level, p_kurt: Kurt) -> void:
@@ -213,6 +239,9 @@ func _tick() -> void:
 	# Kurt's yaw 0 faces -Z (Godot) = +Y (MDK).
 	target_yaw = fposmod(90.0 + rad_to_deg(kurt.yaw), 360.0)
 	kurt_yaw = target_yaw
+	if cutscene:
+		_cutscene_tick()
+		return
 	alarm_ticks = maxi(alarm_ticks - 1, 0)
 	_update_bar()
 	if town_ticks > 0:
@@ -245,6 +274,180 @@ func _tick() -> void:
 		vm.run(obj)
 		if not obj.dead:
 			motion.update(obj)
+
+
+## `special_event` (opcode 131, 0x4456d2): cutscenes (events above 50, 0x477cf4) or the end of the
+## level (50 and below).
+func special_event(obj: MDKObject, event: int) -> void:
+	if event <= 50:
+		_end_level()
+		return
+	match event:
+		51:
+			# Kurt strikes (0x4779e0): the original first plays Kurt's `X_STRIKD` animation full screen
+			# (0x4398f0, not done yet), then puts him at the object, which moves 4 units along y.
+			kurt.teleport(MDKMeshBuilder.to_godot(obj.mdk_position), deg_to_rad(obj.yaw - 90.0))
+			obj.mdk_position.y += 4.0
+			_start_cutscene(CUTSCENE_STRIKE, obj)
+			camera_distance = 10.0
+			camera_position = obj.mdk_position - Vector3(10.0, 4.0, -8.0)
+			camera_pitch = 0.0
+			camera_yaw = 90.0 - obj.yaw
+		52:
+			var dog := find_object_named("XBN")
+			if dog:
+				_start_cutscene(CUTSCENE_DOG, dog)
+				camera_mode = 0
+		53, 92:
+			_end_cutscene()
+		55:
+			camera_mode = 2
+		61:
+			var gunter := find_object_named("XGUNTAM")
+			if gunter:
+				_start_cutscene(CUTSCENE_ALL, gunter)
+				camera_mode = 11
+				var heading := Vector2.from_angle(deg_to_rad(gunter.yaw)) * 45.0
+				camera_position = gunter.mdk_position + Vector3(heading.x, heading.y, 3.0)
+				camera_pitch = -20.0
+				camera_yaw = 270.0 - gunter.yaw
+				camera_distance = 45.0
+		81:
+			# The end of the game: the original plays `MISC/FLIC/MDKEND.FLC` and `MDKBZK.MVE`.
+			_start_cutscene(CUTSCENE_END, obj)
+			level_ended.emit(true)
+		91:
+			_start_cutscene(CUTSCENE_ALL_FLAGGED, obj)
+			camera_mode = 12
+			camera_position = Vector3(-121.0, 3347.0, -350.0)
+		93:
+			_start_cutscene(CUTSCENE_BOSS, obj)
+			camera_mode = 12
+			camera_position = Vector3(1158.0, 5006.0, 315.0)
+
+
+## The first active object of a type (the cutscenes' targets).
+func find_object_named(type_name: String) -> MDKObject:
+	for obj in objects:
+		if not obj.dead and obj.type_name == type_name:
+			return obj
+	return null
+
+
+## Starts a cutscene: Kurt stops firing (0x4779b0) and stands still, the camera looks at `target`.
+func _start_cutscene(state: int, target: MDKObject) -> void:
+	cutscene = state
+	cutscene_target = target
+	kurt.stop_firing()
+	kurt.frozen = true
+
+
+func _end_cutscene() -> void:
+	cutscene = 0
+	cutscene_target = null
+	kurt.frozen = false
+	kurt.visible = true
+	for obj in objects:
+		obj.visible = true
+
+
+## A frame during a cutscene (0x478704 instead of the normal frame): only some objects run and are
+## drawn, and the camera follows the cutscene's shot (0x477d94).
+func _cutscene_tick() -> void:
+	kurt.visible = cutscene == CUTSCENE_STRIKE or cutscene == CUTSCENE_END
+	for obj in objects.duplicate():
+		if obj.dead or obj.arena != current_arena:
+			continue
+		var flagged: bool = obj.flags & 0x201000 != 0 or obj.thrown_kind > 0
+		var runs: bool
+		var shown: bool
+		if cutscene == CUTSCENE_END:
+			runs = false
+			shown = false
+		elif cutscene < CUTSCENE_ALL:
+			runs = obj.type_name in CUTSCENE_TYPES
+			shown = runs and obj.type_name != "BOLT" and obj.type_name != "BIGBOLT"
+		else:
+			runs = cutscene == CUTSCENE_ALL_FLAGGED or not flagged
+			shown = not flagged
+		obj.visible = shown
+		if runs:
+			vm.run(obj)
+			if not obj.dead:
+				motion.update(obj)
+	if cutscene and cutscene_target and not cutscene_target.dead:
+		_update_cutscene_camera()
+
+
+## The cutscene camera (0x477d94). Every shot but mode 11 looks at the target, 3 units above its
+## origin. Mode 0 starts from (423, 85) and switches to mode 1 once the target is 12 units away;
+## modes 1 and 2 orbit behind the target (12 or 25 units), smoothly for 1800 ticks.
+func _update_cutscene_camera() -> void:
+	var target := cutscene_target.mdk_position
+	var point := camera_position
+	var yaw := camera_yaw
+	var distance := camera_distance
+	match camera_mode:
+		0:
+			point = Vector3(423.0, 85.0, maxf(target.z - 25.0, -2260.0))
+			yaw = 90.0 - rad_to_deg(atan2(target.y - point.y, target.x - point.x))
+			distance = point.distance_to(target)
+			if distance >= 12.0:
+				camera_mode = 1
+			camera_timer = 1800
+		1, 2:
+			distance = (12.0 if camera_mode == 1 else 25.0) * 0.1 + camera_distance * 0.9
+			var around := Vector2.from_angle(deg_to_rad(cutscene_target.yaw + 150.0)) * distance
+			point = Vector3(target.x + around.x, target.y + around.y, -2258.0)
+			if camera_mode == 2:
+				point.z = minf(camera_position.z + motion.ticks, -2246.0)
+			if camera_timer > 0:
+				point = point * 0.2 + camera_position * 0.8
+			yaw = 120.0 - cutscene_target.yaw
+		12:
+			yaw = 90.0 - rad_to_deg(atan2(target.y - point.y, target.x - point.x))
+			distance = point.distance_to(target)
+			camera_timer = 1800
+	var pitch := camera_pitch
+	if camera_mode != 11:
+		pitch = -rad_to_deg(atan2(target.z + 3.0 - point.z, distance))
+		if pitch < -180.0:
+			pitch += 360.0
+	if camera_mode == 1 or camera_mode == 2:
+		if camera_timer > 0:
+			pitch = pitch * 0.2 + camera_pitch * 0.8
+			yaw = yaw * 0.2 + camera_yaw * 0.8
+			camera_timer -= 1
+		else:
+			pitch = pitch * 0.7 + camera_pitch * 0.3
+			yaw = yaw * 0.3 + camera_yaw * 0.7
+	camera_distance = distance
+	camera_pitch = pitch
+	camera_yaw = yaw
+	if cutscene != CUTSCENE_BOSS:
+		camera_position = point
+	_camera_point = point
+
+
+## The cutscene camera's view (Godot space). The camera's yaw is `90° − heading`.
+func get_cutscene_camera() -> Transform3D:
+	var yaw := deg_to_rad(camera_yaw)
+	var pitch := deg_to_rad(camera_pitch)
+	var forward := Vector3(sin(yaw) * cos(pitch), cos(yaw) * cos(pitch), -sin(pitch))
+	return Transform3D(Basis.looking_at(MDKMeshBuilder.to_godot(forward), Vector3.UP), MDKMeshBuilder.to_godot(_camera_point))
+
+
+## The end of a level (`special_event` 0–50): at the end of the frame (0x41d4d8, 0x40a9e0) Kurt
+## stops firing and the level is over (`0x573b60`), with the sounds `NUKE` and `TORNADO`. The
+## original also breaks the arena up around Kurt (`END_LEVEL`) and shows the statistics.
+func _end_level() -> void:
+	if level_over:
+		return
+	level_over = true
+	kurt.stop_firing()
+	play_sound_at("NUKE", kurt_position)
+	play_sound_at("TORNADO", kurt_position)
+	level_ended.emit(false)
 
 
 ## Spawns the aliens placed by the DTI records of type 2 (`ARENA$TYPE_n` scripts).
@@ -287,6 +490,60 @@ func spawn(parent: MDKObject, type_name: String, mdk_position: Vector3, yaw: flo
 		vm.run(obj)
 	obj.restart = script
 	return obj
+
+
+## `spawn_box` (opcode 159): an object whose model is a box of `size` (`model_create_box` 0x404188,
+## 8 corners at ± half the size, 12 triangles) showing the texture `texture_name` as an animated
+## sprite (`FIRE`: small flames, `PULSE`). The triangles themselves aren't drawn.
+func spawn_box(parent: MDKObject, mdk_position: Vector3, size: Vector3, texture_name: String, script: int) -> MDKObject:
+	var model := MDKModel.new()
+	model.name = texture_name
+	var part := MDKModel.Part.new()
+	for i in 8:
+		part.vertices.push_back(Vector3(size.x if i & 1 else -size.x, size.y if i & 2 else -size.y, size.z if i & 4 else -size.z) * 0.5)
+	for triangle in [[0, 1, 2], [1, 2, 3], [0, 4, 6], [0, 2, 6], [0, 1, 5], [0, 5, 4], [1, 5, 7], [1, 3, 7], [3, 2, 6], [3, 7, 6], [5, 4, 6], [5, 7, 6]]:
+		part.triangle_indices.append_array(PackedInt32Array(triangle))
+		part.triangle_materials.push_back(-256)
+		part.triangle_uvs.append_array(PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO]))
+	part.bounds = AABB(-size * 0.5, size)
+	model.parts.push_back(part)
+	model.bounds = part.bounds
+	var obj := MDKObject.new()
+	obj.arena = parent.arena
+	var resolver := _get_resolver(parent.arena)
+	obj.setup(texture_name, model, resolver)
+	obj.instance_id = _next_instance
+	_next_instance += 1
+	obj.mdk_position = mdk_position
+	obj.spawn_position = mdk_position
+	obj.previous_position = mdk_position
+	obj.update_transform()
+	var texture := resolver.find_texture(texture_name)
+	if texture:
+		var sprite := Sprite3D.new()
+		var image := resolver.palette.make_image(texture.width, texture.height * texture.frame_count, texture.indices, true)
+		sprite.texture = ImageTexture.create_from_image(image)
+		sprite.vframes = texture.frame_count
+		sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.pixel_size = maxf(size.x, size.z) / maxf(texture.width, 1)
+		obj.add_child(sprite)
+		_box_sprites.push_back(sprite)
+	add_child(obj)
+	objects.push_back(obj)
+	obj.restart = script
+	return obj
+
+
+## Advances the animated sprites of box objects (30 frames per second ❓).
+func _process(delta: float) -> void:
+	_box_time += delta
+	for i in range(_box_sprites.size() - 1, -1, -1):
+		var sprite := _box_sprites[i]
+		if not is_instance_valid(sprite):
+			_box_sprites.remove_at(i)
+			continue
+		sprite.frame = int(_box_time * 30.0) % sprite.vframes
 
 
 func remove(obj: MDKObject) -> void:

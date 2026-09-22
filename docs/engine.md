@@ -57,7 +57,8 @@ active object (`obj+6`):
    the previous ones (`obj+0x180`, `obj+0x50`).
 
 A reduced update (0x478704 → 0x47868c: script, path, movement, velocity, animation) runs a few
-object types (`XM5_FLAP`, `BIGBOLT`, `SW_SBONE`, `SW_SEAL`…) in a special game state (`0x573c60`).
+object types (`XM5_FLAP`, `BIGBOLT`, `SW_SBONE`, `SW_SEAL`…) during cutscenes (`0x573c60`, see
+[Cutscenes](#cutscenes-special_event-131)).
 
 ### Flags
 
@@ -461,6 +462,95 @@ Snake-like aliens: a head object with links hanging off it (level 3's flying bom
   exist; the first link that finds a gap (or a dead head) detaches (`obj+0x138` = 0, movement
   command 0) and is left to its own script.
 
+## Swinging objects and ropes
+
+- `jump_to x, y, z, speed, gain` (226, 0x4578ba) hangs the object on a rope: pivot `obj+0x1c` =
+  (x, y, z), angular speed `obj+0x302` = speed, gain `obj+0x30a`, rope length `obj+0x306` =
+  pivot z − object z, the yaw to turn to `obj+0x30e` = its yaw, and flag 0x400000. Only level 6's
+  `XSWINGB` (`OLYM_6`, a 1985-unit pendulum with `touch_damage` and the sounds `PENDULUM` and
+  `PENDHIT`) uses it.
+- Every frame (0x43cfe8, after the script) with θ = pitch (`obj+0x13c`) and t = ticks:
+  `ω −= sin θ · gain · t`, then `θ += ω · gain · t`, and the object is put at
+  `pivot + (cos yaw · sin θ · L, sin yaw · sin θ · L, −cos θ · L)`: it swings in the vertical plane
+  of its yaw, tilting with the swing.
+- At each turning point (ω changes sign) the plane turns towards the target: the angle to it less
+  the yaw, wrapped to ±180°, folded to ±90° (either side of the plane will do) and clamped to
+  ±15°, is added to the yaw as the new goal, which the yaw reaches at 10° per second.
+- **Ropes** (the block `obj+0x2d0`): `+0x2d0` is a palette colour, `+0x2d1` a mode and 4 points
+  follow at `+0x2d2`. `arena_build_drawlist` (0x4185f0) draws them as lines (0x40e6c4):
+  - mode 0xFF: a line from each of the model's reference points 1–4 (`obj+0x1bc + i × 12`) to
+    each non-zero point i;
+  - other modes: bits 0 and 1 are the lines point 0 → point 1 and point 2 → point 3 (the first
+    end 5 units higher).
+- `set_2d0_block` (242) sets colour 1 and mode 0xFF with 4 points, or clears the mode with a
+  count of 0: level 5's cage of Bones (`MUSE_5`, whose cables vanish one at a time before it
+  falls) and a platform in level 8 (`GUNT_10`). The pendulum writes colour 1, mode 1 and the
+  line from itself to the pivot every frame.
+
+## Cutscenes (`special_event` 131)
+
+`special_event e` (0x4456d2) calls 0x477cf4 for events above 50; the others end the level.
+
+- **Cutscene state `0x573c60`**: while it's non-zero, `game_frame` (0x41d4d8) runs 0x478704
+  instead of the normal frame: Kurt isn't updated and the controls do nothing.
+  - Below 0x3d only `XM5_FLAP`, `XBN`, `BOLT`, `BIGBOLT`, `SW_SBONE` and `SW_SEAL` run (the
+    reduced update 0x47868c) and are drawn, except the bolts.
+  - From 0x3d on, every active object without the flags 0x201000 (pickups, Kurt's items) runs and
+    is drawn; at 0x5b the flagged ones also run, but still aren't drawn.
+  - Kurt is drawn only at 0x47 (and 0x51); at 0x51 nothing else runs or is drawn.
+- "Stop" (0x4779b0): leaves sniper mode (0x4645c8) and stops Kurt firing (`0x573a38`, 0x46c3e4).
+- **The camera** (0x477d94): shot `0x599938`, target `0x599940`; it keeps the yaw `0x599920`
+  (`90° − heading`), pitch `0x599924`, distance `0x599928`, position `0x59992c` and a blend timer
+  `0x59993c` in ticks. All shots but 11 look at the target's z + 3: pitch = −atan2(dz, distance),
+  yaw = 90° − the heading to the target.
+  - 0: from (423, 85, max(target z − 25, −2260)); timer 1800; switches to 1 once the target is 12
+    or more units away (at once in practice: it starts the orbit from far away).
+  - 1 and 2: orbit behind the target at `(cos, sin)(target yaw + 150°) × d`, with
+    `d = 0.9 d + 0.1 × (12 or 25)`, at z −2258 (1) or rising by a tick per tick up to −2246 (2);
+    yaw = 120° − target yaw. While the timer runs (it drops by the ticks) the position, pitch and
+    yaw are `0.2 new + 0.8 old`, then the pitch is `0.7 new + 0.3 old` and the yaw
+    `0.3 new + 0.7 old`.
+  - 11: fixed position, yaw and pitch. 12: fixed position looking at the target (in state 0x5d
+    the stored position is never overwritten).
+- **Events** (all in the last levels' scripts):
+
+| Event | Where | What |
+| --- | --- | --- |
+| 51 (0x4779e0) | `MUSE_5` `XBN` | Bones strikes: 0x4398f0(1) first plays Kurt's model with `X_STRIKD` full screen (❓ how it looks; 0x43fa0c plays `X_STRIKB` the same way). Kurt is put at the object with its yaw, the object moves 4 along y, Kurt's state becomes 100 ❓; state 0x47, camera at (Kurt x − 10, y, z + 8) with yaw `90° − Kurt yaw`, pitch 0, distance 10 (shot unchanged, probably 11) |
+| 52 (0x477ac4) | `MUSE_5` `XBN` | stop; the first `XBN` is the target; state 0x34, shot 0 (follows the dog) |
+| 53, 92 | `MUSE_5`, `DANT_10`, `GUNT_10` | state 0: the cutscene ends |
+| 54 | `MUSE_5` | nothing |
+| 55 | `MUSE_5` `XBN` jumps | shot 2 |
+| 61 (0x477b44) | `MUSE_5` `XGUNTAM` dies | stop; state 0x3d, shot 11 at Gunter's position + 45 units ahead, z + 3, pitch −20°, yaw `270° − his yaw` |
+| 81 | `MUSE_5`, end of the `X_STRIKE` path | the end of the game: state 0x51, 0x477248(1): game state `0x574262` = 8 plays `MISC/FLIC/MDKEND.FLC` (0x47727c, with timed extras 0x477604) and `MISC/FLIC/MDKBZK.MVE` (0x477870), then state 0 (the menu ❓) |
+| 91 (0x477c84) | `GUNT_10`, the second `XGUNTAM` | stop; state 0x5b, shot 12 from (−121, 3347, −350) |
+| 93 (0x477c34) | `DANT_10`, `XB1` after `XB_HEAD` is blown off | the same, state 0x5d, from (1158, 5006, 315) |
+
+- **The end of the level** (events 0–50, always 0: `HMO_10`, `MEAT_10`, `OLYM_10`, `DANT_10`,
+  `GUNT_10`, 1–3 s after the boss dies): the pending teleport arena `0x573c80` = −1. At the end of
+  `game_frame` that stops Kurt firing and calls 0x40a9e0 (`endlev.c`): the level is over
+  (`0x573b60` = 1), Kurt's health is at least 1, the sounds `NUKE` and `TORNADO` play and the arena
+  breaks up around Kurt (`END_LEVEL`: 100000, 500, 0.15, 0.025 at 0x490654 ❓ how it looks).
+- The port runs the cutscenes (state, which objects run and show, the camera) and goes on to the
+  next level 5 s after the end; the full-screen strike, the videos, the break-up and the
+  statistics aren't done yet.
+
+## Bullet holes (`special_130` 130, 0x45d140)
+
+Stamps a bullet hole onto the texture of the object's last hit face, in the `if_hit_part ANY`
+handlers of Gunter (`MUSE_2`, `GUNT_10`) and level 6's boss (`OLYM_10` `XB2`, where eyes and nose
+get a hole instead of being hidden when `if_option 0`).
+
+- Only direct projectile hits (0x462708) write the hit part + 1 (`obj+0x21c`, never cleared ❓),
+  the face (`obj+0x220`) and the point (`obj+0x210`); explosions only set `+0x21e`.
+- The point is taken into model space (less the translation `obj+0xb8/c8/d8`, times the matrix
+  `obj+0xac`, divided by the scale `obj+0x58` squared). Faces with no texture, or texture flag
+  `+0xc & 2`, are skipped. 0x45d594 intersects the line v0 → point with the edge v1–v2 (in the 2
+  dominant axes) to interpolate the UVs.
+- `BHOLE` (`BHOLE2` when `0x5742dc` = 0) is blitted 1:1 centred there (0x4048f8, only non-zero
+  pixels), wrapping at the texture size, and the texture is uploaded again (0x4749c4, 0x474978).
+  The texture is shared, so every object using it gets the hole. Not in the port yet.
+
 ## Globals
 
 Globals used by the scripts and objects are listed in [scripts/notes_part2.md](scripts/notes_part2.md)
@@ -483,6 +573,9 @@ and [scripts/notes_part3.md](scripts/notes_part3.md). The main ones:
 | 0x574270 | ticks before the minecrawler flattens the town |
 | 0x574268 | level index (0–5 for levels 3–8); 0x57423e difficulty (0–2) |
 | 0x5742a4 | the HUD is drawn (0 in cutscenes) |
+| 0x573c60 | cutscene state (0 = none), see [Cutscenes](#cutscenes-special_event-131); camera 0x599920…0x599940 |
+| 0x573c80 | arena Kurt is teleported to at the end of the frame; −1 ends the level |
+| 0x573b60 | the level is over |
 
 ## Constants
 

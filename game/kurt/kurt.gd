@@ -158,6 +158,8 @@ var can_use_item: Callable
 ## vertical speed, or NAN outside them.
 var updraft: Callable
 ## Kurt slides on his back (`0x573be8`, state 807): the wind zones start it.
+## Kurt stands still and ignores the controls (cutscenes).
+var frozen := false
 var sliding := false
 ## Slide velocity in MDK coordinates (`0x573bf0`), its speed cap and the smoothed floor normal.
 var slide_velocity := Vector2.ZERO
@@ -216,6 +218,13 @@ func setup(p_sprites: MDKBni, palette: MDKPalette, p_get_sound: Callable) -> voi
 	set_physics_process(true)
 
 
+## Stops firing the chain gun.
+func stop_firing() -> void:
+	firing = false
+	_gun_player.stop()
+	muzzle.visible = false
+
+
 func teleport(p_position: Vector3, p_yaw: float) -> void:
 	global_position = p_position
 	yaw = p_yaw
@@ -256,6 +265,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	invulnerable = maxf(invulnerable - delta, 0.0)
+	if frozen:
+		velocity = Vector3.ZERO
+		return
 	if state == State.DEAD:
 		_update_death(delta)
 		return
