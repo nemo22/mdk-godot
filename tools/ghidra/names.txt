@@ -12,7 +12,7 @@ func 0x43a070 strn_equal_nocase
 # Memory and errors
 func 0x4251b4 mem_alloc
 func 0x424de0 mem_free
-func 0x40a2d0 fatal_error
+func 0x40a2d0 debug_error  # appends to debug.err when debugging is enabled; doesn't quit
 func 0x40a394 fatal_open_error
 func 0x40a404 fatal_read_error
 

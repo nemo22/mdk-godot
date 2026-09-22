@@ -4,6 +4,8 @@
 [ext_resource type="Script" path="res://game/level.gd" id="2_level"]
 [ext_resource type="PackedScene" path="res://game/kurt/kurt.tscn" id="3_kurt"]
 [ext_resource type="PackedScene" path="res://game/follow_camera.tscn" id="4_camera"]
+[ext_resource type="Script" path="res://game/level_audio.gd" id="5_audio"]
+[ext_resource type="Script" path="res://game/scripts/script_runtime.gd" id="6_scripts"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
@@ -13,9 +15,17 @@ script = ExtResource("2_level")
 
 [node name="Kurt" parent="." instance=ExtResource("3_kurt")]
 
+[node name="Scripts" type="Node3D" parent="."]
+script = ExtResource("6_scripts")
+
 [node name="FollowCamera" parent="." node_paths=PackedStringArray("target", "level") instance=ExtResource("4_camera")]
 target = NodePath("../Kurt")
 level = NodePath("../Level")
+
+[node name="LevelAudio" type="Node" parent="." node_paths=PackedStringArray("level", "target")]
+script = ExtResource("5_audio")
+level = NodePath("../Level")
+target = NodePath("../Kurt")
 
 [node name="Info" type="Label" parent="."]
 offset_left = 8.0

@@ -118,6 +118,9 @@ static func build_model_mesh(model: MDKModel, pose: Array, resolver: MaterialRes
 	var by_material := {}
 	for p in model.parts.size():
 		var part := model.parts[p]
+		# Hidden parts have no vertices in the pose.
+		if (pose[p] as PackedVector3Array).is_empty():
+			continue
 		for tri in part.triangle_materials.size():
 			var material := resolver.get_material(part.triangle_materials[tri], model.materials)
 			if not material:

@@ -9,11 +9,16 @@
 - Main menu with the original background, texts, music and sound (the original font isn't decoded).
 - Model and animation formats (models section and CMI models), model viewer.
 - Level viewer (`--viewer`) and model viewer (`--models`).
+- Scripts: bytecode decoder (every script of the game) and VM with 107 of the 251 opcodes; arena
+  scripts, DTI aliens, spawned objects, commands between objects.
+- Object movement like the original: spline paths, walking, flying, chasing, formations,
+  projectiles, gravity, friction and collisions with the arena.
 
 ## Next
 
-1. **Aliens and scripts**: CMI bytecode interpreter, placing arena objects and aliens, doors,
-   bullets, pickups, effects.
+1. **Aliens and scripts**: the remaining opcodes (hits and weak parts, effects, doors and triangle
+   groups, sounds attached to animations, the bomb/decoy), path planning around walls
+   (`plan_move`), automatic banking, chains.
 2. **Weapons and sniper mode**, HUD.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
 4. **Movement details**: ledge grab, slippery floors, conveyors, updrafts, camera roll, pushing Kurt

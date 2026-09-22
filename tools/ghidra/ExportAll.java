@@ -1,6 +1,7 @@
 // Exports decompiled C code, strings (with referencing functions), imports and a function list
 // of the current program, for grep-based analysis outside of the Ghidra UI.
-// Usage (headless): -postScript ExportAll.java <output directory>
+// Usage (headless): -postScript ExportAll.java <output directory> [name prefix or "all"] [timeout seconds]
+// With a name prefix, only the matching functions are decompiled, into `decomp_<prefix>.c`.
 // @category MDK
 
 import java.io.File;
@@ -36,7 +37,14 @@ public class ExportAll extends GhidraScript {
 	public void run() throws Exception {
 		String[] args = getScriptArgs();
 		File outDir = new File(args.length > 0 ? args[0] : ".");
+		String prefix = args.length > 1 && !args[1].equals("all") ? args[1] : "";
+		int timeout = args.length > 2 ? Integer.parseInt(args[2]) : 120;
 		outDir.mkdirs();
+		if (!prefix.isEmpty()) {
+			exportDecompiled(new File(outDir, "decomp_" + prefix + ".c"), null, prefix, timeout);
+			println("Export done: " + prefix);
+			return;
+		}
 
 		try (PrintWriter pw = new PrintWriter(new FileWriter(new File(outDir, "strings.txt")))) {
 			DataIterator it = currentProgram.getListing().getDefinedData(true);
@@ -53,7 +61,6 @@ public class ExportAll extends GhidraScript {
 		try (PrintWriter pw = new PrintWriter(new FileWriter(new File(outDir, "imports.txt")))) {
 			for (Symbol s : currentProgram.getSymbolTable().getExternalSymbols()) {
 				Set<String> callers = new TreeSet<>();
-				Function ext = getFunctionAt(s.getAddress());
 				for (Reference ref : getReferencesTo(s.getAddress())) {
 					callers.add(ref.getFromAddress().toString());
 				}
@@ -68,24 +75,37 @@ public class ExportAll extends GhidraScript {
 			}
 		}
 
-		DecompInterface decomp = new DecompInterface();
-		DecompileOptions options = new DecompileOptions();
-		decomp.setOptions(options);
-		decomp.openProgram(currentProgram);
+		exportDecompiled(new File(outDir, "decomp.c"), new File(outDir, "functions.txt"), "", timeout);
+		println("Export done: " + outDir.getAbsolutePath());
+	}
 
-		try (PrintWriter code = new PrintWriter(new FileWriter(new File(outDir, "decomp.c")));
-				PrintWriter list = new PrintWriter(new FileWriter(new File(outDir, "functions.txt")))) {
+	private void exportDecompiled(File codeFile, File listFile, String prefix, int timeout) throws Exception {
+		DecompInterface decomp = new DecompInterface();
+		decomp.setOptions(new DecompileOptions());
+		decomp.openProgram(currentProgram);
+		try (PrintWriter code = new PrintWriter(new FileWriter(codeFile));
+				PrintWriter list = listFile != null ? new PrintWriter(new FileWriter(listFile)) : null) {
 			FunctionIterator functions = currentProgram.getFunctionManager().getFunctions(true);
 			while (functions.hasNext() && !monitor.isCancelled()) {
 				Function f = functions.next();
+				if (!f.getName().startsWith(prefix)) {
+					continue;
+				}
+				// Script opcode handlers are exported separately (prefix `op_`): they use their parent's stack
+				// frame and are slow to decompile.
+				if (prefix.isEmpty() && f.getName().startsWith("op_")) {
+					continue;
+				}
 				int callers = f.getCallingFunctions(monitor).size();
 				int callees = f.getCalledFunctions(monitor).size();
-				list.println(f.getEntryPoint() + "\t" + f.getName() + "\tsize=" + f.getBody().getNumAddresses()
-						+ "\tcallers=" + callers + "\tcallees=" + callees);
+				if (list != null) {
+					list.println(f.getEntryPoint() + "\t" + f.getName() + "\tsize=" + f.getBody().getNumAddresses()
+							+ "\tcallers=" + callers + "\tcallees=" + callees);
+				}
 				if (f.isExternal() || f.isThunk()) {
 					continue;
 				}
-				DecompileResults r = decomp.decompileFunction(f, 120, monitor);
+				DecompileResults r = decomp.decompileFunction(f, timeout, monitor);
 				code.println("// ==== FUNCTION " + f.getName() + " @ " + f.getEntryPoint() + " size="
 						+ f.getBody().getNumAddresses() + " callers=" + callers);
 				if (r.decompileCompleted()) {
@@ -93,9 +113,9 @@ public class ExportAll extends GhidraScript {
 				} else {
 					code.println("// decompile failed: " + r.getErrorMessage());
 				}
+				code.flush();
 			}
 		}
 		decomp.dispose();
-		println("Export done: " + outDir.getAbsolutePath());
 	}
 }

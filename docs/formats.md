@@ -70,8 +70,8 @@ Index 0 is forced to black and is transparent in sprites. Sprites (`BNI`) only u
 
 `u32 count`, then 16-byte entries: `char[8] name, u32 records offset, f32 camera pitch` ✅ (degrees,
 positive looks down; usually 4, see [gameplay.md](gameplay.md#camera-camera_update)).
-Names are `HMO_1`… (arenas) and `CHMO_1`… (corridors) in level 3; other levels use other prefixes
-(`MEAT_n`, `OLYM_n`, `DANT_n`, …). Names not starting with `C` get flags `|= 3` in the game.
+Names are `HMO_1`… (arenas) and `CHMO_1`… (corridors, whose geometry is in `LEVELnO.SNI`) in
+level 3; other levels use other prefixes (`MEAT_n`, `OLYM_n`, `DANT_n`, …). Names not starting with `C` get flags `|= 3` in the game.
 
 Each records list is `u32 count`, then 36-byte records:
 `u32 type, s32 id, f32 angle, f32 x, f32 y, f32 z, char[12] name`. Types seen: 1, 3 (in corridors),
@@ -129,8 +129,8 @@ per part:
   [flags] char[12] name, f32 pivot[3] (unused by the game)
   u32 vertex count, f32[3] × count        model space
   u32 triangle count, 36-byte triangles    same layout as world triangles, UVs in texels
-  [flags] f32 bbox[6]            xmin, xmax, ymin, ymax, zmin, zmax (unused)
-f32 bbox[6]                      whole model (unused)
+  [flags] f32 bbox[6]            xmin, xmax, ymin, ymax, zmin, zmax (rest pose)
+f32 bbox[6]                      whole model (object collision boxes, see engine.md)
 u32 reference point count (≤ 8), f32[3] × count
 ```
 
@@ -215,9 +215,16 @@ for how the hotspot is used.
 
 ## SNI (sound archive) ✅
 
-Common header, `u32 count`, then per entry `char[12] name, u16 ?, u16 ?, u32 offset, u32 length`
-(offset relative to file offset 4). Each entry is a RIFF WAV file (PCM, mono, 8 or 16 bits).
-`GATTFIRE`'s RIFF header doesn't count its final pad byte.
+Common header, `u32 count`, then per entry `char[12] name, u16 flags, u16 ?, u32 offset, u32 length`
+(offset relative to file offset 4). Most entries are RIFF WAV files (PCM, mono, 8 or 16 bits);
+flags 3 marks music (the arena music of `LEVELnO.SNI`, `CORRIDOR`), 1 some looping sounds ❓.
+Some headers are sloppy (`GATTFIRE` doesn't count its final pad byte, some `LIST` chunks are
+truncated), so the port only keeps the `fmt ` and `data` chunks.
+
+**Corridors** ✅: in `LEVELnO.SNI`, the entries named after arenas with a `C` prefix (`CHMO_1`,
+`CMEAT_3`, `CGUNT_2`…) aren't sounds but the geometry of the corridor that follows the arena, in the
+same layout as an arena's world section. Empty corridors are two triangles with the material `NONE`.
+Corridors use the level texture archive (`C_FLR1`…).
 
 ## CMI (scripts) 🟡
 

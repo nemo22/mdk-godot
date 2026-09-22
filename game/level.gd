@@ -8,6 +8,9 @@ var number := 0
 var dti: MDKDti
 var mto: MDKMto
 var level_textures: MDKTextureArchive
+var cmi: MDKCmi
+## `TRAVERSE.SNI`, `LEVELnS.SNI` and `LEVELnO.SNI` (searched in reverse order by `get_sound()`).
+var sound_archives: Array[MDKSni] = []
 var triangle_count := 0
 ## Bounds of each arena's geometry (Godot coordinates) and its camera pitch in degrees (DTI).
 var arena_bounds := {}
@@ -21,14 +24,32 @@ func load_level(p_number: int) -> void:
 	dti = MDKDti.load_file(MDKData.path(dir + "LEVEL%d.DTI" % number))
 	mto = MDKMto.load_file(MDKData.path(dir + "LEVEL%dO.MTO" % number))
 	level_textures = MDKTextureArchive.load_file(MDKData.path(dir + "LEVEL%dS.MTI" % number))
+	cmi = MDKCmi.load_file(MDKData.path(dir + "LEVEL%d.CMI" % number))
+	var overlays := MDKSni.load_file(MDKData.path(dir + "LEVEL%dO.SNI" % number))
+	sound_archives = [MDKSni.load_file(MDKData.path("TRAVERSE/TRAVERSE.SNI")),
+			MDKSni.load_file(MDKData.path(dir + "LEVEL%dS.SNI" % number)), overlays]
 
 	var all_archives: Array[MDKTextureArchive] = []
 	for arena_name: String in mto.get_arena_names():
 		all_archives.push_back(mto.get_arena(arena_name).textures)
 
+	var arenas: Array[MDKArena] = []
 	for arena_name: String in mto.get_arena_names():
-		var arena := mto.get_arena(arena_name)
-		var palette := dti.palette.with_arena_colors(arena.palette_rgb)
+		arenas.push_back(mto.get_arena(arena_name))
+	# Corridors between arenas (`CHMO_1` follows `HMO_1`) are stored in `LEVELnO.SNI`.
+	for entry_name: String in overlays.entries:
+		if not overlays.is_sound(entry_name):
+			var corridor := MDKArena.parse_world(entry_name, overlays.bytes, overlays.entries[entry_name][0])
+			# Empty corridors are a placeholder quad with the `NONE` material.
+			if corridor.materials != ["NONE"]:
+				arenas.push_back(corridor)
+
+	for arena in arenas:
+		var arena_name := arena.name
+		var palette_arena := arena
+		if arena.palette_rgb.is_empty():
+			palette_arena = mto.get_arena(arena_name.substr(1)) if mto.arena_offsets.has(arena_name.substr(1)) else arenas[0]
+		var palette := dti.palette.with_arena_colors(palette_arena.palette_rgb)
 		# Some arenas use textures of another arena (e.g. `O3_*` in level 6), so search them last.
 		var archives: Array[MDKTextureArchive] = [arena.textures, level_textures]
 		archives.append_array(all_archives)
@@ -58,8 +79,8 @@ func load_level(p_number: int) -> void:
 	_setup_sky()
 
 
-## Returns the camera pitch (degrees, positive looks down) of the arena containing `position`.
-func get_camera_pitch(position: Vector3) -> float:
+## Returns the name of the (smallest) arena whose bounds contain `position`, or an empty string.
+func get_arena_at(position: Vector3) -> String:
 	var best := ""
 	var best_volume := INF
 	for arena_name: String in arena_bounds:
@@ -67,7 +88,25 @@ func get_camera_pitch(position: Vector3) -> float:
 		if aabb.grow(2.0).has_point(position) and aabb.get_volume() < best_volume:
 			best = arena_name
 			best_volume = aabb.get_volume()
-	return arena_pitch.get(best, 4.0)
+	return best
+
+
+## Returns the camera pitch (degrees, positive looks down) of the arena containing `position`.
+func get_camera_pitch(position: Vector3) -> float:
+	return arena_pitch.get(get_arena_at(position), 4.0)
+
+
+## Returns a sound by name (loaded on first use), or `null`.
+func get_sound(sound_name: String) -> AudioStreamWAV:
+	for i in range(sound_archives.size() - 1, -1, -1):
+		if sound_archives[i].entries.has(sound_name):
+			return sound_archives[i].get_sound(sound_name)
+	return null
+
+
+## Returns the music of an arena (an AudioStreamWAV), or `null`.
+func get_arena_music(arena_name: String) -> AudioStream:
+	return get_sound(cmi.arena_music.get(arena_name, "NONE"))
 
 
 ## Player start position (Godot coordinates).

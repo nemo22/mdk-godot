@@ -14,6 +14,8 @@ class Part:
 	var triangle_indices := PackedInt32Array()
 	var triangle_materials := PackedInt32Array()
 	var triangle_uvs := PackedVector2Array()
+	## Bounding box of the rest pose (model space).
+	var bounds := AABB()
 
 
 var name := ""
@@ -21,6 +23,8 @@ var name := ""
 var materials: Array[String] = []
 var parts: Array[Part] = []
 var reference_points := PackedVector3Array()
+## Bounding box of the rest pose (model space).
+var bounds := AABB()
 
 
 static func parse(p_name: String, bytes: PackedByteArray, offset: int) -> MDKModel:
@@ -56,13 +60,21 @@ static func parse(p_name: String, bytes: PackedByteArray, offset: int) -> MDKMod
 				part.triangle_uvs[t * 3 + k] = Vector2(u, r.f32())
 			r.skip(4)
 		if named_parts:
-			r.skip(24)
+			part.bounds = _read_bounds(r)
 		model.parts.push_back(part)
-	r.skip(24)
+	model.bounds = _read_bounds(r)
 	var reference_count := r.u32()
 	for i in reference_count:
 		model.reference_points.push_back(r.vec3())
 	return model
+
+
+## Bounds are stored as `min x, max x, min y, max y, min z, max z`.
+static func _read_bounds(r: BinReader) -> AABB:
+	var x := Vector2(r.f32(), r.f32())
+	var y := Vector2(r.f32(), r.f32())
+	var z := Vector2(r.f32(), r.f32())
+	return AABB(Vector3(x.x, y.x, z.x), Vector3(x.y - x.x, y.y - y.x, z.y - z.x))
 
 
 ## Returns a copy of every part's vertices (an animation pose), in part order.

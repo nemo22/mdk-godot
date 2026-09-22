@@ -70,11 +70,18 @@ var state_time := 0.0
 ## Animation position in frames.
 var animation_frame := 0.0
 var chute_open := false
+## Health (the original's `0x574324`; damage isn't scaled by the difficulty yet).
+var health := 100
 var sprites: MDKBni
+## Returns a sound by name (see `Level.get_sound()`).
+var get_sound: Callable
 
 var _mouse_turn := 0.0
 var _jump_ticks_left := 0
 var _jump_released := true
+## The original alternates two pairs of footstep sounds (`damp_animate`).
+var _footstep_pair := false
+var _sound_players: Array[AudioStreamPlayer] = []
 
 @onready var sprite: SpriteAnimator = $Sprite
 
@@ -84,8 +91,13 @@ func _ready() -> void:
 	set_physics_process(false)
 
 
-func setup(p_sprites: MDKBni, palette: MDKPalette) -> void:
+func setup(p_sprites: MDKBni, palette: MDKPalette, p_get_sound: Callable) -> void:
 	sprites = p_sprites
+	get_sound = p_get_sound
+	for i in 4:
+		var player := AudioStreamPlayer.new()
+		add_child(player)
+		_sound_players.push_back(player)
 	sprite.setup(palette)
 	_set_state(State.STILL)
 	set_physics_process(true)
@@ -98,6 +110,11 @@ func teleport(p_position: Vector3, p_yaw: float) -> void:
 	forward_speed = 0.0
 	strafe_speed = 0.0
 	reset_physics_interpolation()
+
+
+## Damage from aliens (`hurt_kurt`).
+func hurt(damage: int) -> void:
+	health = maxi(health - damage, 0)
 
 
 ## Facing direction (horizontal).
@@ -177,6 +194,7 @@ func _update_vertical(delta: float, on_floor: bool) -> void:
 		_jump_ticks_left = maxi(0, _jump_ticks_left - int(ceil(delta * TICKS)))
 	if not chute_open and jump_held and _jump_released and velocity.y < FALL_START_SPEED:
 		chute_open = true
+		play_sound("CHUTEOUT")
 	if chute_open:
 		velocity.y -= CHUTE_GRAVITY * delta
 		if velocity.y < CHUTE_FALL_SPEED:
@@ -197,6 +215,9 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 		elif velocity.y < FALL_START_SPEED and (state not in [State.JUMP, State.RUN_JUMP] or animation_done):
 			_set_state(State.FALL)
 	elif state in [State.JUMP, State.RUN_JUMP, State.FALL, State.CHUTE]:
+		if state == State.CHUTE:
+			play_sound("CHUTEIN")
+		play_sound("LAND")
 		_set_state(State.LAND)
 	elif state == State.LAND and not animation_done and is_zero_approx(forward_input) and is_zero_approx(strafe_input):
 		pass
@@ -220,7 +241,16 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 			# `damp_run_anim_frame`: the run animation follows the speed (backwards when backing up).
 			var u := absf(forward_speed) / TICKS * 1.5
 			var rate := 0.75 * u + 0.25 if u <= 1.0 else 0.25 * u + 0.75
+			var previous := posmod(int(floor(animation_frame)), animation.frame_count)
 			animation_frame += rate * TICKS * delta * (-1.0 if forward_speed < 0.0 else 1.0)
+			var current := posmod(int(floor(animation_frame)), animation.frame_count)
+			# Footsteps on frames 0 and 13.
+			if current != previous:
+				if current == 0:
+					play_sound("FOOT3" if _footstep_pair else "FOOT1")
+				elif current == 13:
+					play_sound("FOOT4" if _footstep_pair else "FOOT2")
+					_footstep_pair = not _footstep_pair
 		State.TURN:
 			# The turning animation covers 45° of rotation.
 			animation_frame = rad_to_deg(yaw) / 45.0 * animation.frame_count
@@ -230,6 +260,18 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 	if not STATE_ANIMATIONS[state][1]:
 		frame = mini(frame, animation.frame_count - 1)
 	sprite.show_frame(animation, frame)
+
+
+## Plays a sound (by name, from the level's sounds) without position.
+func play_sound(sound_name: String) -> void:
+	var stream: AudioStream = get_sound.call(sound_name)
+	if not stream:
+		return
+	for player in _sound_players:
+		if not player.playing:
+			player.stream = stream
+			player.play()
+			return
 
 
 func _set_state(new_state: State) -> void:

@@ -1,0 +1,6639 @@
+[
+ {
+  "opcode": 1,
+  "mnemonic": "set_restart",
+  "operands": [],
+  "flow": "next",
+  "summary": "Stores the current pc (address of the next opcode) in obj+0x108: every following frame (and every yield) restarts here.",
+  "fields": [
+   "obj+0x108"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 2,
+  "mnemonic": "follow_path",
+  "operands": [
+   {
+    "type": "off32",
+    "name": "path"
+   },
+   {
+    "type": "u8",
+    "name": "flags1"
+   },
+   {
+    "type": "u8",
+    "name": "flags2"
+   },
+   {
+    "type": "u16",
+    "name": "start_frame"
+   },
+   {
+    "type": "u8",
+    "name": "relative"
+   },
+   {
+    "type": "complex",
+    "name": "origin",
+    "layout": "if relative==0: f32 x, f32 y, f32 z; otherwise nothing"
+   }
+  ],
+  "flow": "next",
+  "summary": "Starts following the spline path record at path (u32 key count, then 40-byte keys: s32 frame, 3 f32 position, 2x3 f32 tangents): obj+0xec = path. flags1 bit0 -> obj+0x149 bit1 (turn the object along the path), bit1 -> obj+0x14b bit3 (path drives XY velocity, Z untouched). flags2 bit0 -> obj+0x149 bit2 (play once, stop at the end instead of looping), bit1 -> speed obj+0xe8 = -1 (backwards; start_frame 0 then means the last key). obj+0xf0 = start_frame. relative!=0: origin obj+0xf4..0xfc = position - spline(start_frame), else origin = the 3 floats. obj+0xe6 (stop frame) = -1, then the position is updated.",
+  "fields": [
+   "obj+0xec",
+   "obj+0xf0",
+   "obj+0xe8",
+   "obj+0xf4",
+   "obj+0xf8",
+   "obj+0xfc",
+   "obj+0xe6",
+   "obj+0x149",
+   "obj+0x14b"
+  ],
+  "helpers": [
+   "0x43c0f8 spline_eval",
+   "0x43c794 path_apply"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 3,
+  "mnemonic": "anim_once",
+  "operands": [
+   {
+    "type": "off32",
+    "name": "anim"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets the animation and plays it once: anim points to a CMI record; if its first u32 is 0 the animation is looked up by the name that follows (arena_find_animation). If it differs from obj+0x114 (or the animation had ended, obj+0x118 == 0xFF00): obj+0x114 = anim, frame obj+0xe4 = -1, time obj+0xdc = -1, obj+0x118 = -1. Clears obj+0x148 bit3 (looping, tested by object_anim_update 0x43a89c): the animation stops on its last frame and obj+0x118 becomes 0xFF00 (ended). obj+0x118 >= 0 is reset to -1. (Named anim_loop in earlier notes: 1064 of its 3273 uses are followed by if_anim_done/if_anim_frame, never those of opcode 59.)",
+  "fields": [
+   "obj+0x114",
+   "obj+0xe4",
+   "obj+0xdc",
+   "obj+0x118",
+   "obj+0x148"
+  ],
+  "helpers": [
+   "0x440b88 resolve_anim",
+   "0x440adc arena_find_animation"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 4,
+  "mnemonic": "command_objects",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "command"
+   },
+   {
+    "type": "complex",
+    "name": "command_args",
+    "layout": "if command==7: branch action block (u8 A; A==0xFE: off32, off32; A==0xFC or 0x0C: off32; else nothing). If command==43: f32 forward, f32 side. Otherwise nothing"
+   },
+   {
+    "type": "u8",
+    "name": "selector"
+   },
+   {
+    "type": "complex",
+    "name": "selector_args",
+    "layout": "if selector is 6 or 10: f32 param; then if selector is 2, 4, 5, 6, 7 or 10: pstr type name; then if selector==5: u32 id"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sends a command to other objects (0x440384). Commands: 1 = join formation around the sender (obj+0x11e=1); 7 = set their script: goto target (A!=0xFC) or gosub (A==0xFC, pushed on their stack) - their obj+0x108/0x230/0x10c = target, wait cleared, leader obj+0x138 = sender; 43 = move near target like opcode 43. Selectors: 2 all of type, 3 all objects (no name), 4 first of type, 5 of type with id (obj+0x146) == id, 6 of type within distance param with line of sight, 7 of type following me (obj+0x138==self), 8 all following me, 9 the linked object obj+0x2b8, 10 of type with obj+0x14 >= param. Receivers must be active, in the same arena, not dead, obey the sender's priority (obj+0x11a/0x11b), and for command 7 not already running that target (obj+0x10c).",
+  "fields": [
+   "obj+0x60",
+   "obj+0x11a",
+   "obj+0x11b",
+   "obj+0x138",
+   "obj+0x2b8"
+  ],
+  "helpers": [
+   "0x440384 command_objects",
+   "0x4405d0 command_object",
+   "0x417450 distance3d",
+   "0x45da40 angle_to",
+   "0x440288 sincos_deg"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 5,
+  "mnemonic": "raise_573_91c",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "v"
+   }
+  ],
+  "flow": "next",
+  "summary": "If 0x573a60 != 0 and 0x573a64 > 0: global 0x57391c = max(0x57391c, v).",
+  "fields": [
+   "0x57391c",
+   "0x573a60",
+   "0x573a64"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 6,
+  "mnemonic": "move_to_target",
+  "operands": [],
+  "flow": "next",
+  "summary": "obj+0x11e = 6: movement code moves toward the target position 0x57fc34 (Kurt or the decoy/target object).",
+  "fields": [
+   "obj+0x11e"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 8,
+  "mnemonic": "set_yaw",
+  "operands": [
+   {
+    "type": "s16",
+    "name": "degrees"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x4c (yaw) = degrees normalised to 0..360.",
+  "fields": [
+   "obj+0x4c"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 9,
+  "mnemonic": "stop_script",
+  "operands": [],
+  "flow": "end",
+  "summary": "obj+0x108 = 0 (script no longer run), gosub depth obj+0x248 = 0, timer obj+0x26c[0] = 0, then returns.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x26c"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 10,
+  "mnemonic": "if_count_objects",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "u8",
+    "name": "count"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: the number of active objects in the same arena whose type name (obj+0xc) equals type_name and that this object may command (their leader obj+0x138 is 0, self, or has a lower obj+0x11a; and their obj+0x11b >= our obj+0x11a) == count.",
+  "fields": [
+   "obj+0x60",
+   "obj+0x138",
+   "obj+0x11a",
+   "obj+0x11b"
+  ],
+  "helpers": [
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 11,
+  "mnemonic": "set_priority",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "v"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x11a = v (command priority used by opcodes 4/10).",
+  "fields": [
+   "obj+0x11a"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 12,
+  "mnemonic": "goto",
+  "operands": [
+   {
+    "type": "repeat",
+    "count": "u8",
+    "items": [
+     {
+      "type": "off32",
+      "name": "target"
+     }
+    ]
+   }
+  ],
+  "flow": "goto",
+  "summary": "Goto: picks one of the N targets at random (rand(N), 0 when N<=1; the chosen offset 0 means null) and jumps: obj+0x108 = pc = target, obj+0x26c[depth] = 0. N is usually 1 (up to 11 in the data, i.e. a random choice).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x402b24 rand_below"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 13,
+  "mnemonic": "if_cheat_key",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: global 0x57eac0 != 0 (a key/input flag, bit 0x40000000 of 0x491018) and 0x5742b8 != 0 (cheat/debug mode, toggled by typing \"ityflvbg\"). When true, 0x57eac0 is cleared after the action (key consumed).",
+  "fields": [
+   "0x57eac0",
+   "0x5742b8"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 14,
+  "mnemonic": "if_sees_kurt",
+  "operands": [
+   {
+    "type": "u16",
+    "name": "range"
+   },
+   {
+    "type": "u8",
+    "name": "cone"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: 0x4605d0(obj, range, cone): Kurt within range, inside a cone around the object's yaw obj+0x4c (width grows with cone/distance) and a clear line of sight (BSP ray in Kurt's arena and 0x573a68).",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x10"
+  ],
+  "helpers": [
+   "0x4605d0 can_see_kurt"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 15,
+  "mnemonic": "alarm",
+  "operands": [],
+  "flow": "next",
+  "summary": "obj+0x11e = 15: while in Kurt's arena the movement code plays an alarm sound every 32 frames and sets 0x573aec = 10 (see opcode 27).",
+  "fields": [
+   "obj+0x11e"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 16,
+  "mnemonic": "set_health",
+  "operands": [
+   {
+    "type": "u16",
+    "name": "health"
+   }
+  ],
+  "flow": "next, or yield when health is 0",
+  "summary": "obj+8 (health, dword) = health and u16 obj+0x2a2 = health. health >= 65000: obj+0x21f = 1 (indestructible). health == 0: 0x43d6d4 kills the object (death script obj+0x110 becomes obj+0x108/0x230 if set, otherwise it explodes) and returns.",
+  "fields": [
+   "obj+0x8",
+   "obj+0x2a2",
+   "obj+0x21f"
+  ],
+  "helpers": [
+   "0x43d6d4 object_kill"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 17,
+  "mnemonic": "if_anim_done",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: no animation (obj+0x114==0) or the animation has ended (obj+0x118 == 0xFF00).",
+  "fields": [
+   "obj+0x114",
+   "obj+0x118"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 18,
+  "mnemonic": "if_timer",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "seconds"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Timer: counter c = u16 obj+0x26c[depth]. If seconds*30 > c: c += g_frame_ticks (0x491e18) and condition false; else c = 0 and condition true. The counter is reset by every goto/gosub.",
+  "fields": [
+   "obj+0x26c",
+   "obj+0x248"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 19,
+  "mnemonic": "anim_mark_ended",
+  "operands": [],
+  "flow": "next",
+  "summary": "obj+0x118 = 0xFF00 (animation considered ended; the next opcode 3/59 restarts even the same animation).",
+  "fields": [
+   "obj+0x118"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 20,
+  "mnemonic": "stop_path",
+  "operands": [],
+  "flow": "next",
+  "summary": "obj+0xec = 0 (stop following the path).",
+  "fields": [
+   "obj+0xec"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 21,
+  "mnemonic": "path_stop_at",
+  "operands": [
+   {
+    "type": "s32",
+    "name": "frame"
+   }
+  ],
+  "flow": "next",
+  "summary": "u16 obj+0xe6 = low 16 bits of the operand (4 bytes are consumed; scripts use -2 = stop at the current frame round(obj+0xf0), -1 = no stop frame, or a frame number): the path holds when round(obj+0xf0) reaches this frame.",
+  "fields": [
+   "obj+0xe6",
+   "obj+0xf0"
+  ],
+  "helpers": [
+   "0x4797c0 round"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 22,
+  "mnemonic": "if_hit",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: hit event obj+0x21e != 0 and != 0xFD. When true, obj+0x21e is cleared after the action.",
+  "fields": [
+   "obj+0x21e"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 23,
+  "mnemonic": "set_flag148_1",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "on"
+   }
+  ],
+  "flow": "next",
+  "summary": "on!=0: obj+0x148 |= 1 and dword obj+0x302 = 1; on==0: obj+0x148 &= ~1 and obj+0x54 = 0 (bit0 disables the automatic banking computed from yaw changes).",
+  "fields": [
+   "obj+0x148",
+   "obj+0x302",
+   "obj+0x54"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 24,
+  "mnemonic": "set_id_and_name",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "n"
+   },
+   {
+    "type": "pstr",
+    "name": "name"
+   }
+  ],
+  "flow": "next",
+  "summary": "u16 obj+0x144 = n - 1; obj+0x140 = pointer to the string (label used by other code).",
+  "fields": [
+   "obj+0x144",
+   "obj+0x140"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 25,
+  "mnemonic": "set_string154",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x154 = pointer to the string.",
+  "fields": [
+   "obj+0x154"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 26,
+  "mnemonic": "set_string150",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x150 = pointer to the string.",
+  "fields": [
+   "obj+0x150"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 27,
+  "mnemonic": "if_alarm",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: global 0x573aec != 0 (set to 10 each frame by an object in movement state 15 in Kurt's arena, see opcode 15).",
+  "fields": [
+   "0x573aec"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 28,
+  "mnemonic": "bomb_follow_path",
+  "operands": [
+   {
+    "type": "off32",
+    "name": "path"
+   }
+  ],
+  "flow": "next",
+  "summary": "If the player projectile 0x491ef0 exists, has type 4 (+0xd0) and flag +0xf8 bit0 clear: it follows the spline path (callback 0x4634ac, +0xe0 = path, +0xe4 = 0) and the flag is set.",
+  "fields": [
+   "0x491ef0"
+  ],
+  "helpers": [
+   "0x4635b0 projectile_set_path"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 29,
+  "mnemonic": "spawn_chain",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "count"
+   },
+   {
+    "type": "pstr",
+    "name": "model"
+   },
+   {
+    "type": "off32",
+    "name": "script"
+   }
+  ],
+  "flow": "next",
+  "summary": "Finds model in the model table 0x520a84 (80 x 0x88 bytes; not found: debug log \"CreateChain %s not found\"), then creates count objects in the arena at the object's position: model instance, obj+0x11c = 7, movement state obj+0x11e = 30 (chain), leader obj+0x138 = self, id obj+0x146 = remaining + highest id of my followers + 1, obj+0x108 = script (may be 0).",
+  "fields": [
+   "obj+0x60"
+  ],
+  "helpers": [
+   "0x45fd4c object_alloc",
+   "0x404374 model_instance_create",
+   "0x43bc20 object_init"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 31,
+  "mnemonic": "set_parts_mask",
+  "operands": [
+   {
+    "type": "repeat",
+    "count": "u8",
+    "items": [
+     {
+      "type": "pstr",
+      "name": "part"
+     }
+    ]
+   }
+  ],
+  "flow": "next",
+  "summary": "For each name, every model part (obj+0xc: +0x1c count, +0x20 parts of 0x5c bytes) with that name (or all parts for \"ALL\") gets its bit set in obj+0x2c8 (hidden/removed parts mask).",
+  "fields": [
+   "obj+0x2c8",
+   "obj+0xc"
+  ],
+  "helpers": [
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 32,
+  "mnemonic": "clear_parts_mask",
+  "operands": [
+   {
+    "type": "repeat",
+    "count": "u8",
+    "items": [
+     {
+      "type": "pstr",
+      "name": "part"
+     }
+    ]
+   }
+  ],
+  "flow": "next",
+  "summary": "For each name (or \"ALL\"): clears the part's bit in obj+0x2c8 unless it is locked in obj+0x2cc (parts blown off by opcode 129).",
+  "fields": [
+   "obj+0x2c8",
+   "obj+0x2cc"
+  ],
+  "helpers": [
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 33,
+  "mnemonic": "if_path_frame",
+  "operands": [
+   {
+    "type": "u32",
+    "name": "frame"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: no path (obj+0xec==0) or round(path time obj+0xf0) >= frame-1.",
+  "fields": [
+   "obj+0xec",
+   "obj+0xf0"
+  ],
+  "helpers": [
+   "0x4797c0 round"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 34,
+  "mnemonic": "if_no_leader",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: obj+0x138 == 0 (no leader/commanding object). When true, also clears obj+0x11e after the action.",
+  "fields": [
+   "obj+0x138",
+   "obj+0x11e"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 35,
+  "mnemonic": "set_flag148_4",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "on"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x148 bit2 = (on != 0).",
+  "fields": [
+   "obj+0x148"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 36,
+  "mnemonic": "set_flag148_2",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "on"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x148 bit1 = (on != 0).",
+  "fields": [
+   "obj+0x148"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 37,
+  "mnemonic": "if_flag14c_2",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: obj+0x14c & 2 (flag set by engine code; meaning not identified).",
+  "fields": [
+   "obj+0x14c"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 38,
+  "mnemonic": "if_vel_z",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If the own vertical velocity obj+0x30 passes the condition, perform the action.",
+  "fields": [
+   "obj+0x30",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 39,
+  "mnemonic": "push_forward",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "speed",
+    "layout": "u8 src; if src==3: f32 immediate (5 bytes in total); else u8 index (2 bytes in total). Value = variable src/index: src 0 = global var 0x573b4c[i], 1 = arena var (obj+0x60)->+0x48[i], 2 = own var obj+0x234[i], any other src (4, 5, ...) = linked object's var (obj+0x2b8)->+0x234[i] (a dummy 0 if there is no link); an index outside 0..3 is treated as 0"
+   }
+  ],
+  "flow": "next",
+  "summary": "Horizontal move accumulator (obj+0x294, obj+0x298) += value * (cos yaw, sin yaw).",
+  "fields": [
+   "obj+0x294",
+   "obj+0x298",
+   "obj+0x4c"
+  ],
+  "helpers": [
+   "0x440944 var_ptr",
+   "0x440288 sincos_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 40,
+  "mnemonic": "turn_yaw",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "rate (deg/s)",
+    "layout": "u8 src; if src==3: f32 immediate (5 bytes in total); else u8 index (2 bytes in total). Value = variable src/index: src 0 = global var 0x573b4c[i], 1 = arena var (obj+0x60)->+0x48[i], 2 = own var obj+0x234[i], any other src (4, 5, ...) = linked object's var (obj+0x2b8)->+0x234[i] (a dummy 0 if there is no link); an index outside 0..3 is treated as 0"
+   }
+  ],
+  "flow": "next",
+  "summary": "Yaw obj+0x4c += value * frame time, wrapped to [0,360).",
+  "fields": [
+   "obj+0x4c"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 41,
+  "mnemonic": "set_targetable",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mode (0 off, 1 on, 2 on + obj+0x14a bit 7)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x149 bit 0 = (mode != 0), obj+0x14a bit 7 = (mode == 2); if the object is now not targetable and it is the object locked in sniper mode (0x573b84), sniper mode is left.",
+  "fields": [
+   "obj+0x149",
+   "obj+0x14a"
+  ],
+  "helpers": [
+   "0x4645c8 exit_sniper_mode"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 42,
+  "mnemonic": "if_hit_part",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "part",
+    "layout": "pstr a; if the first character of a is NUL (length 0, or a string starting with NUL): a second pstr follows and is the part name, and the hit event is NOT cleared; otherwise a is the part name and the event is cleared"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: 0 < obj+0x21e <= part count and (name of hit part #obj+0x21e (obj+0xc -> parts, 0x5c bytes each) == part name, or part name == \"ANY\") (case-insensitive). When true and the first string was non-empty, obj+0x21e is cleared after the action.",
+  "fields": [
+   "obj+0x21e",
+   "obj+0xc"
+  ],
+  "helpers": [
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 43,
+  "mnemonic": "move_near_target",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "forward"
+   },
+   {
+    "type": "f32",
+    "name": "side"
+   }
+  ],
+  "flow": "next",
+  "summary": "Only if the object is in Kurt's arena (obj+0x60 == 0x573a0c): destination obj+0x120/0x124 = target position 0x57fc34 offset by (forward, side)*0.01*distance rotated by the direction object->target, obj+0x128 = target z + obj+0x5c; obj+0x11e = 43, obj+0xec = 0, path planning 0x45a1dc, clears obj+0x2a0/0x2a1/0x2a4..0x2ac and obj+0x14c bit3.",
+  "fields": [
+   "obj+0x120",
+   "obj+0x124",
+   "obj+0x128",
+   "obj+0x11e",
+   "obj+0xec",
+   "obj+0x2a0",
+   "obj+0x14c"
+  ],
+  "helpers": [
+   "0x417450 distance3d",
+   "0x45da40 angle_to",
+   "0x440288 sincos_deg",
+   "0x45a1dc plan_move"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 44,
+  "mnemonic": "if_move_done",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: obj+0x11e == 0 (the movement command set by opcodes 6/15/43/... has finished).",
+  "fields": [
+   "obj+0x11e"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 45,
+  "mnemonic": "if_target_dist",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If the 3D distance from self (obj+0x10) to the target point 0x57fc34 (Kurt, or the active decoy) passes the condition, perform the action.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x417450 dist3d",
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 46,
+  "mnemonic": "find_cover_spot",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Look for type-5 waypoints of the arena (arena+0x38 count, arena+0x3c 36-byte entries) 9..400 units away, no farther from self than Kurt and closer to Kurt than self, that Kurt cannot see (BSP segment test) but self can; one of the 3 nearest is chosen at random (nearer = likelier) as destination obj+0x120 with motion obj+0x11e = 43, else obj+0x11e = 0. If obj+0x11e == 43 afterwards, perform the action.",
+  "fields": [
+   "obj+0x11e",
+   "obj+0x120",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45dbac find_cover_spot",
+   "0x421680 bsp_segment_hit",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 47,
+  "mnemonic": "if_chance",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "percent"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: rand(10000) < percent*100.",
+  "fields": [],
+  "helpers": [
+   "0x402b24 rand_below"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 48,
+  "mnemonic": "if_chance_per_second",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "mean_seconds"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: rand(10000) < (g_frame_dt / mean_seconds) * 10000, i.e. fires on average once every mean_seconds.",
+  "fields": [],
+  "helpers": [
+   "0x402b24 rand_below"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 49,
+  "mnemonic": "release_children",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "count"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch (loop)",
+  "summary": "Repeat count times: detach the active object of the same arena that is attached to self (other+0x138 == self, other+0x11e == 30) with the highest id (+0x144>>16) by clearing its +0x138 and +0x11e; each time none is found, perform the action as if a condition were true (0xFE takes the then branch, there is no else).",
+  "fields": [
+   "obj+0x138",
+   "obj+0x11e",
+   "obj+0x144",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 50,
+  "mnemonic": "set_max_speed",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "speed",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x38 = value (max speed, default 50).",
+  "fields": [
+   "obj+0x38"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 51,
+  "mnemonic": "set_accel",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "accel",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x3c = value (acceleration, default 10).",
+  "fields": [
+   "obj+0x3c"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 52,
+  "mnemonic": "set_decel",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "decel",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x40 = value (deceleration, default 15).",
+  "fields": [
+   "obj+0x40"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 53,
+  "mnemonic": "set_speed",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "speed",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x34 = value (current speed).",
+  "fields": [
+   "obj+0x34"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 54,
+  "mnemonic": "if_dest_dist",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If the distance from self to the move destination obj+0x120 (2D when obj+0x14c bit 1 is set, else 3D) passes the condition, perform the action.",
+  "fields": [
+   "obj+0x120",
+   "obj+0x14c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x4174ac dist2d",
+   "0x417450 dist3d",
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 55,
+  "mnemonic": "set_gravity",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "v",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x48 = value: gravity in units/s^2 (default 32), applied to the vertical velocity obj+0x30 when obj+0x148 bit 1 is set (0x45e74c); also used by opcodes 189 and 229.",
+  "fields": [
+   "obj+0x48"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 56,
+  "mnemonic": "add_health",
+  "operands": [
+   {
+    "type": "s16",
+    "name": "delta"
+   }
+  ],
+  "flow": "next, or yield when health drops to 0",
+  "summary": "If health obj+8 < 65000: obj+8 += delta. If obj+8 <= 0: obj+8 = 0, 0x43d6d4 kills the object, return.",
+  "fields": [
+   "obj+0x8"
+  ],
+  "helpers": [
+   "0x43d6d4 object_kill"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 57,
+  "mnemonic": "if_not_sees_kurt",
+  "operands": [
+   {
+    "type": "u16",
+    "name": "range"
+   },
+   {
+    "type": "u8",
+    "name": "cone"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Negation of opcode 14.",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x10"
+  ],
+  "helpers": [
+   "0x4605d0 can_see_kurt"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 58,
+  "mnemonic": "anim_fps",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "fps",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0xe0 = fps (animation frames per second, default 30).",
+  "fields": [
+   "obj+0xe0"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 59,
+  "mnemonic": "anim_loop",
+  "operands": [
+   {
+    "type": "off32",
+    "name": "anim"
+   }
+  ],
+  "flow": "next",
+  "summary": "Same as opcode 3 but sets obj+0x148 bit3: the animation loops (and never ends).",
+  "fields": [
+   "obj+0x114",
+   "obj+0xe4",
+   "obj+0xdc",
+   "obj+0x118",
+   "obj+0x148"
+  ],
+  "helpers": [
+   "0x440b88 resolve_anim",
+   "0x440adc arena_find_animation"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 60,
+  "mnemonic": "face_target",
+  "operands": [],
+  "flow": "next",
+  "summary": "Yaw = direction from self to the target point 0x57fc34 (Kurt or the decoy), in [0,360).",
+  "fields": [
+   "obj+0x4c"
+  ],
+  "helpers": [
+   "0x440220 atan2_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 61,
+  "mnemonic": "fire",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "fire_origin",
+    "name": "origin",
+    "layout": "u8 mode; if mode==0: u8 point_index; else pstr part_name"
+   },
+   {
+    "type": "pstr",
+    "name": "bullet_name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawn a global model (CMI directory 1, table 0x520a84: 80 entries of 0x88 bytes; unknown name: 'Bullet %s not found' is logged and nothing happens) at the origin (mode 0: own point obj+0x1b0 + 12*index; else the centre of the named model part in world space). The new object gets motion 61 (obj+0x11e), flags obj+0x148 |= 0x80820, the spawner's yaw and pitch, and the script at obj+0x108; its type script runs once in object_init.",
+  "fields": [
+   "obj+0x1b0",
+   "obj+0x4c",
+   "obj+0x13c",
+   "obj+0x60"
+  ],
+  "helpers": [
+   "0x4608b0 part_world_pos",
+   "0x45fd4c object_alloc",
+   "0x404374 model_instance_create",
+   "0x43bc20 object_init"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 62,
+  "mnemonic": "if_target_angle",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Angle between the own yaw obj+0x4c and the direction to the target point, folded to 0..180 degrees; if it passes the condition, perform the action.",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440220 atan2_deg",
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 63,
+  "mnemonic": "set_flag148_10_inv",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "off"
+   }
+  ],
+  "flow": "next",
+  "summary": "off!=0: obj+0x148 &= ~0x10; off==0: obj+0x148 |= 0x10.",
+  "fields": [
+   "obj+0x148"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 64,
+  "mnemonic": "wait",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "seconds",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "wait",
+  "summary": "Wait: obj+0x22c = seconds (0 is replaced by 1e-5, i.e. one frame), obj+0x230 = pc after the operand, then returns. script_run decrements obj+0x22c by g_frame_dt each frame and resumes at obj+0x230 once it is <= 0.",
+  "fields": [
+   "obj+0x22c",
+   "obj+0x230"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 65,
+  "mnemonic": "set_var",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "index"
+   },
+   {
+    "type": "f32",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "Variable src/index = value.",
+  "fields": [
+   "obj+0x234",
+   "obj+0x2b8"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 66,
+  "mnemonic": "add_var",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "index"
+   },
+   {
+    "type": "f32",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "Variable src/index += value.",
+  "fields": [
+   "obj+0x234"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 67,
+  "mnemonic": "if_var",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "index"
+   },
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If variable src/index (0 global, 1 arena, 2 own, other = linked object obj+0x2b8; index 0..3) passes the condition, perform the action.",
+  "fields": [
+   "obj+0x234",
+   "obj+0x2b8",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440944 var_ptr",
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 68,
+  "mnemonic": "set_flag",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "bit"
+   }
+  ],
+  "flow": "next",
+  "summary": "Set bit (bit&31) in flag word src (0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 obj+0x312 when obj+0x14a bit 4 is set, other = linked object's +0x244).",
+  "fields": [
+   "obj+0x244"
+  ],
+  "helpers": [
+   "0x440a34 flags_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 69,
+  "mnemonic": "clear_flag",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "bit"
+   }
+  ],
+  "flow": "next",
+  "summary": "Clear bit (bit&31) in flag word src.",
+  "fields": [
+   "obj+0x244"
+  ],
+  "helpers": [
+   "0x440a34 flags_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 70,
+  "mnemonic": "toggle_flag",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "bit"
+   }
+  ],
+  "flow": "next",
+  "summary": "Toggle bit (bit&31) in flag word src.",
+  "fields": [
+   "obj+0x244"
+  ],
+  "helpers": [
+   "0x440a34 flags_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 71,
+  "mnemonic": "if_flag_set",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "bit"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If bit (bit&31) of flag word src (0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 obj+0x312, other = linked object's +0x244) is set, perform the action.",
+  "fields": [
+   "obj+0x244",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440a34 flags_ptr",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 72,
+  "mnemonic": "if_flag_clear",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "bit"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If bit (bit&31) of flag word src is clear, perform the action.",
+  "fields": [
+   "obj+0x244",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440a34 flags_ptr",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 73,
+  "mnemonic": "set_obey_level",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "v"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x11b = v (accepts commands from senders whose obj+0x11a <= v).",
+  "fields": [
+   "obj+0x11b"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 74,
+  "mnemonic": "attach_to",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "a (-> obj+0x276)"
+   },
+   {
+    "type": "u8",
+    "name": "b (-> obj+0x277)"
+   },
+   {
+    "type": "pstr",
+    "name": "name_id (\"<model>_<id>\")"
+   }
+  ],
+  "flow": "next",
+  "summary": "Find the active object of the own arena whose \"%s_%d\" (model name, id) equals name_id (the last match wins) and link to it: obj+0x278 = obj+0x138 = it, motion obj+0x11e = 74 (follow/attach).",
+  "fields": [
+   "obj+0x276",
+   "obj+0x277",
+   "obj+0x278",
+   "obj+0x138",
+   "obj+0x11e"
+  ],
+  "helpers": [
+   "0x479511 sprintf",
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 75,
+  "mnemonic": "stop_motion",
+  "operands": [],
+  "flow": "next",
+  "summary": "Cancel the current motion command: obj+0x11e = 0.",
+  "fields": [
+   "obj+0x11e"
+  ],
+  "helpers": [],
+  "part": 2
+ },
+ {
+  "opcode": 76,
+  "mnemonic": "set_death_script",
+  "operands": [
+   {
+    "type": "off32",
+    "name": "script (0 = none)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x110 = script: where the script goes when the object is killed (object_die 0x43d670 jumps there instead of the default death).",
+  "fields": [
+   "obj+0x110"
+  ],
+  "helpers": [],
+  "part": 2
+ },
+ {
+  "opcode": 77,
+  "mnemonic": "debug_msg",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "nonfatal"
+   },
+   {
+    "type": "pstr",
+    "name": "text"
+   }
+  ],
+  "flow": "next",
+  "summary": "Debug print: sprintf \"%s:%d (%d,%d,%d,%d) \\\"%s\\\"\" (name, id, x, y, z, yaw, text) into 0x4d1a50 (the debug text line drawn on screen in debug mode); when nonfatal == 0 it is also passed to 0x40a2d0, which only appends to debug.err when debugging is enabled (no quit).",
+  "fields": [],
+  "helpers": [
+   "0x479511 sprintf",
+   "0x40a2d0 debug_log"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 78,
+  "mnemonic": "move_to",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   }
+  ],
+  "flow": "next",
+  "summary": "Start walking to a point: destination obj+0x120..0x128 = (x,y,z), motion obj+0x11e = 78, obj+0xec = 0, a detour waypoint obj+0x12c is planned around walls, stuck detection (obj+0x2a0..0x2ac, obj+0x14c bit 3) is reset.",
+  "fields": [
+   "obj+0x120",
+   "obj+0x124",
+   "obj+0x128",
+   "obj+0x11e",
+   "obj+0xec",
+   "obj+0x12c",
+   "obj+0x2a0",
+   "obj+0x2a4",
+   "obj+0x14c"
+  ],
+  "helpers": [
+   "0x45a1dc plan_path"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 79,
+  "mnemonic": "set_pos",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   }
+  ],
+  "flow": "next",
+  "summary": "Teleport: position obj+0x10..0x18 = (x,y,z).",
+  "fields": [
+   "obj+0x10",
+   "obj+0x14",
+   "obj+0x18"
+  ],
+  "helpers": [],
+  "part": 2
+ },
+ {
+  "opcode": 80,
+  "mnemonic": "add_vel_local",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "a"
+   },
+   {
+    "type": "f32",
+    "name": "b"
+   },
+   {
+    "type": "f32",
+    "name": "up"
+   }
+  ],
+  "flow": "next",
+  "summary": "Velocity += (-a*cos(yaw) - b*sin(yaw), -b*cos(yaw) - a*sin(yaw), up) (the engine's local-offset convention, also used by 235, 248 and 159).",
+  "fields": [
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x30"
+  ],
+  "helpers": [
+   "0x440288 sincos_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 81,
+  "mnemonic": "push_hit_dir",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mode (1 = multiply by the frame time)"
+   },
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "speed",
+    "layout": "u8 src; if src==3: f32 immediate (5 bytes in total); else u8 index (2 bytes in total). Value = variable src/index: src 0 = global var 0x573b4c[i], 1 = arena var (obj+0x60)->+0x48[i], 2 = own var obj+0x234[i], any other src (4, 5, ...) = linked object's var (obj+0x2b8)->+0x234[i] (a dummy 0 if there is no link); an index outside 0..3 is treated as 0"
+   }
+  ],
+  "flow": "next",
+  "summary": "Velocity (obj+0x28, obj+0x2c) += value * (cos, sin)(obj+0x224), obj+0x224 being the direction of the last hit or explosion; value is multiplied by the frame time when mode == 1.",
+  "fields": [
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x224"
+  ],
+  "helpers": [
+   "0x440944 var_ptr",
+   "0x440288 sincos_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 82,
+  "mnemonic": "set_friction",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "v",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x44 = value: friction in units/s^2 (default 64) that slows the velocity obj+0x28..0x30 down every frame (0x45e810; horizontal only when obj+0x148 bit 1, gravity, is set).",
+  "fields": [
+   "obj+0x44"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 83,
+  "mnemonic": "set_scale",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value_or_ramp",
+    "name": "args",
+    "layout": "if the next byte is 0xFF: that byte, f32 target, f32 rate (9 bytes); otherwise a value operand (u8 src; if src==3: f32; else u8 index)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x58 (scale) = value; or, with the 0xFF form, move obj+0x58 toward target each time it runs (growing: *= 1 + rate*dt, shrinking: *= 1 - rate*dt*0.5), clamped at target.",
+  "fields": [
+   "obj+0x58"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 84,
+  "mnemonic": "set_height_offset",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "value",
+    "layout": "u8 src; if src==3: f32 immediate (5 bytes in total); else u8 index (2 bytes in total). Value = variable src/index: src 0 = global var 0x573b4c[i], 1 = arena var (obj+0x60)->+0x48[i], 2 = own var obj+0x234[i], any other src (4, 5, ...) = linked object's var (obj+0x2b8)->+0x234[i] (a dummy 0 if there is no link); an index outside 0..3 is treated as 0"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x5c = value (height offset added to z when aiming at or walking to a target).",
+  "fields": [
+   "obj+0x5c"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 85,
+  "mnemonic": "set_rolling",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "on"
+   }
+  ],
+  "flow": "next",
+  "summary": "on != 0: if obj+0x148 bit 6 is clear, set it and copy the 3x3 rotation part of the matrix at obj+0xac into obj+0x302..0x325 - from then on the object's matrix is that saved matrix (rotated by the distance moved, radius obj+0x326) times the scale instead of yaw/pitch/roll; on == 0: clear obj+0x148 bit 6.",
+  "fields": [
+   "obj+0x148",
+   "obj+0xac",
+   "obj+0x302"
+  ],
+  "helpers": [],
+  "part": 2
+ },
+ {
+  "opcode": 86,
+  "mnemonic": "spawn",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   },
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawns an enemy of type type_name at absolute (x,y,z) in this object's arena (obj+0x60) with the next free instance number and the given script (new+0x108); nothing if the type is unknown.",
+  "fields": [
+   "obj+0x60"
+  ],
+  "helpers": [
+   "0x45ca88 enemy_type_find",
+   "0x45cb04 enemy_max_instance",
+   "0x45cdec enemy_spawn"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 87,
+  "mnemonic": "if_kurt_looks_at_me",
+  "operands": [
+   {
+    "type": "u16",
+    "name": "min_range"
+   },
+   {
+    "type": "u16",
+    "name": "max_range"
+   },
+   {
+    "type": "u8",
+    "name": "cone"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: 0x460730: min_range <= distance to Kurt <= max_range, the object is inside a cone around Kurt's yaw (g_damp_yaw) and the line of sight is clear.",
+  "fields": [
+   "obj+0x10"
+  ],
+  "helpers": [
+   "0x460730 kurt_faces_object"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 88,
+  "mnemonic": "set_move_x",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mode"
+   }
+  ],
+  "flow": "next",
+  "summary": "If mode != 2: movement command obj+0x11e = 'X' (0x58) with parameter obj+0x11f = mode; if mode == 2: obj+0x11e = 0 and obj+0x34 = 0. Always clears obj+0xec.",
+  "fields": [
+   "obj+0x11e",
+   "obj+0x11f",
+   "obj+0x34",
+   "obj+0xec"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 89,
+  "mnemonic": "play_sound",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "flags"
+   },
+   {
+    "type": "complex",
+    "name": "position",
+    "layout": "if flags&0x10: f32 x, f32 y, f32 z; else if flags&0x20: u8 slot (position obj+0x1b0 + slot*12); else if flags&0x40: f32 x, f32 y, f32 z; otherwise nothing"
+   },
+   {
+    "type": "pstr",
+    "name": "sound"
+   }
+  ],
+  "flow": "next",
+  "summary": "Plays a sound found by name (debug log \"%s #%d sfx not found: %s\"). flags&0x80 (2D): flags&3 = 0 play, 1 restart, 2 play if not playing, 3 nothing. Otherwise 3D (volume 0x7fff, 1.0, 50.0): 0 play, 1 stop+play, 2 play if not playing, 3 stop. Position: 0x10 = floats (the handle follows the object obj+0x10), 0x20 = slot point, 0x40 = fixed floats, none = object position (0x20000 mode if flags&4). flags&4: the voice is stored in obj+0x158 and obj+0x15c = sound name (see opcode 249).",
+  "fields": [
+   "obj+0x10",
+   "obj+0x1b0",
+   "obj+0x158",
+   "obj+0x15c",
+   "obj+0xac"
+  ],
+  "helpers": [
+   "0x403c38 sound_find",
+   "0x402db0 sound_play_3d",
+   "0x402ed8 sound_restart_3d",
+   "0x4032a8 sound_find_voice",
+   "0x402d5c sound_stop",
+   "0x402f08 sound_play_2d",
+   "0x402fd8 sound_play_2d_ex"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 90,
+  "mnemonic": "model_texture_frame",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "texture_name"
+   },
+   {
+    "type": "f32",
+    "name": "frame (1-based)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Finds the animated texture texture_name in the object's model (obj+0xc: +0x10 pointer array, +0x18 count, name at +0x28 of each entry) and sets its absolute frame to frame-1; nothing if not found.",
+  "fields": [
+   "obj+0xc"
+  ],
+  "helpers": [
+   "0x42d9c0 anim_texture_set_frame",
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 91,
+  "mnemonic": "set_path_speed",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "speed",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0xe8 = value (path speed in frames per tick, negative = backwards).",
+  "fields": [
+   "obj+0xe8"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 92,
+  "mnemonic": "if_anim_frame",
+  "operands": [
+   {
+    "type": "u16",
+    "name": "frame"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: animation ended (as opcode 17) or current animation frame (s16 obj+0xe4) >= frame-1.",
+  "fields": [
+   "obj+0x114",
+   "obj+0x118",
+   "obj+0xe4"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 93,
+  "mnemonic": "accel_toward_point",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "speed"
+   },
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   }
+  ],
+  "flow": "next",
+  "summary": "Velocity += (point - position) / (|dx|+|dy|+|dz|) * speed (Manhattan-normalized).",
+  "fields": [
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x30"
+  ],
+  "helpers": [],
+  "part": 2
+ },
+ {
+  "opcode": 94,
+  "mnemonic": "goto_weighted",
+  "operands": [
+   {
+    "type": "repeat",
+    "count": "u8",
+    "items": [
+     {
+      "type": "u8",
+      "name": "weight"
+     },
+     {
+      "type": "off32",
+      "name": "target"
+     }
+    ]
+   }
+  ],
+  "flow": "goto",
+  "summary": "Weighted random goto: r = rand(sum of weights); jumps to the first entry whose cumulative weight exceeds r (same jump semantics as goto).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x402b24 rand_below"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 95,
+  "mnemonic": "gosub_weighted",
+  "operands": [
+   {
+    "type": "repeat",
+    "count": "u8",
+    "items": [
+     {
+      "type": "u8",
+      "name": "weight"
+     },
+     {
+      "type": "off32",
+      "name": "target"
+     }
+    ]
+   }
+  ],
+  "flow": "gosub",
+  "summary": "Weighted random gosub (same selection as opcode 94, same stack behaviour as opcode 252).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x402b24 rand_below",
+   "0x440300 gosub_stack_error (debug log only)"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 96,
+  "mnemonic": "if_kurt_in_rect",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x_min"
+   },
+   {
+    "type": "f32",
+    "name": "y_min"
+   },
+   {
+    "type": "f32",
+    "name": "x_max"
+   },
+   {
+    "type": "f32",
+    "name": "y_max"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If Kurt's real position 0x5739c0 is inside the XY rectangle [x_min,x_max] x [y_min,y_max], perform the action.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 97,
+  "mnemonic": "set_banking",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "enable"
+   }
+  ],
+  "flow": "next",
+  "summary": "enable != 0 clears bit 0x80 of obj+0x148 (automatic roll obj+0x54 and pitch obj+0x13c from turning/moving); enable == 0 sets it and zeroes the roll obj+0x54.",
+  "fields": [
+   "obj+0x148",
+   "obj+0x54"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 98,
+  "mnemonic": "group_set_state",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "tri_group"
+   },
+   {
+    "type": "u8",
+    "name": "op"
+   }
+  ],
+  "flow": "next",
+  "summary": "Changes flag bits 0x10/0x20 of the arena triangles of group tri_group (op 0 set both, 1/other clear both, 2 set 0x10, 3 clear 0x10, 4 set 0x20, 5 clear 0x20) and mirrors them in the arena group masks (0x20 -> arena+0x10c, 0x10 -> arena+0x110).",
+  "fields": [
+   "arena+0x10c",
+   "arena+0x110"
+  ],
+  "helpers": [
+   "0x40c694 tri_group_set_state"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 99,
+  "mnemonic": "group_on_hit",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "hit_mask"
+   },
+   {
+    "type": "u8",
+    "name": "tri_group (1-16)"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets the hit trigger of triangle group g: arena+0x7c[(g-1)%16] = hit_mask, arena+0x8c[(g-1)%16] = script offset (raw). When a triangle of group g is hit with a hit type in hit_mask (0x40d560), the arena counter arena+0xcc[g-1] is increased and the script is run once in the scratch object 0x57fc40 (0x45c9a0: pc = g_cmi + offset, +0x60 = arena, +0x21d = hit parameter), with the hit position/direction in the light globals 0x4d5374/0x4d5358.",
+  "fields": [
+   "arena+0x7c",
+   "arena+0x8c",
+   "arena+0xcc"
+  ],
+  "helpers": [
+   "0x40d560 tri_group_hit",
+   "0x45c9a0 run_hit_script"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 100,
+  "mnemonic": "arena_show",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "arena_name"
+   }
+  ],
+  "flow": "next",
+  "summary": "Makes arena arena_name visible ('BSPShow'); NONE passes NULL. Fatal error if not found.",
+  "fields": [],
+  "helpers": [
+   "0x41a1ac arena_show_by_name",
+   "0x41a11c arena_show"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 101,
+  "mnemonic": "aim_target",
+  "operands": [],
+  "flow": "next",
+  "summary": "Yaw toward the target point (only when the XY distance > 2) and pitch obj+0x13c = atan2(target.z + 3 - z, XY distance).",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x13c"
+  ],
+  "helpers": [
+   "0x4174ac dist2d",
+   "0x440220 atan2_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 102,
+  "mnemonic": "if_path_done",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: no path is being followed (obj+0xec == 0).",
+  "fields": [
+   "obj+0xec"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 103,
+  "mnemonic": "if_kurt_in_box",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x_min"
+   },
+   {
+    "type": "f32",
+    "name": "y_min"
+   },
+   {
+    "type": "f32",
+    "name": "z_min"
+   },
+   {
+    "type": "f32",
+    "name": "x_max"
+   },
+   {
+    "type": "f32",
+    "name": "y_max"
+   },
+   {
+    "type": "f32",
+    "name": "z_max"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If Kurt's real position 0x5739c0 is inside the axis-aligned box, perform the action.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 104,
+  "mnemonic": "aim_target_inaccurate",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "accuracy (100 = exact)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Aim yaw and pitch at the target point like 101 (no distance check); unless accuracy == 100 add a random error: yaw += (rand(20)-10)*(100-accuracy)/(dist3d+0.1), pitch += (rand(20)-10)*(100-accuracy)/((dist3d+0.1)*4).",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x13c"
+  ],
+  "helpers": [
+   "0x417450 dist3d",
+   "0x4174ac dist2d",
+   "0x440220 atan2_deg",
+   "0x402b24 rand_n"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 105,
+  "mnemonic": "turn_to_target_offset3d",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "turn_rate (deg/s)"
+   },
+   {
+    "type": "f32",
+    "name": "accuracy (100 = exact)"
+   },
+   {
+    "type": "f32",
+    "name": "offset_a"
+   },
+   {
+    "type": "f32",
+    "name": "offset_b"
+   },
+   {
+    "type": "f32",
+    "name": "offset_z"
+   }
+  ],
+  "flow": "next",
+  "summary": "Like 235 with P.z = target.z + offset_z, and the pitch is also turned toward atan2(P.z - z + obj+0x5c, dist2d); random error unless accuracy == 100 (the pitch error is divided by 1 + dist2d*4); yaw and pitch each move at most turn_rate*dt.",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x13c",
+   "obj+0x5c"
+  ],
+  "helpers": [
+   "0x440288 sincos_deg",
+   "0x440220 atan2_deg",
+   "0x460968 turn_towards",
+   "0x402b24 rand_n"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 106,
+  "mnemonic": "set_302",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x302 = value (unaligned float in a per-kind union: distance threshold of the obj+0x14b bit 4 animation-speed logic, jump flight time of 229, first element of the rolling matrix of 85).",
+  "fields": [
+   "obj+0x302"
+  ],
+  "helpers": [],
+  "part": 2
+ },
+ {
+  "opcode": 107,
+  "mnemonic": "set_loop_sound",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "sound_name (empty = none)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Stop the object's looping sound obj+0x158; obj+0x15c = name; if the name is not empty start that sound looping at the object's position (flags 0x2000e, volume 0x7fff, 1.0, 50.0).",
+  "fields": [
+   "obj+0x158",
+   "obj+0x15c"
+  ],
+  "helpers": [
+   "0x402d04 sound_stop",
+   "0x403c38 sound_find",
+   "0x402db0 sound_play_3d"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 108,
+  "mnemonic": "if_touching_kurt",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: while flying as a projectile (obj+0x11e == 61) the hit flag obj+0x14c bit 2; otherwise the own bbox obj+0x198 (scaled by obj+0x2c0) overlaps Kurt's bbox 0x5739f4 and so does one of the model part boxes not masked by obj+0x2c8. If true, perform the action.",
+  "fields": [
+   "obj+0x11e",
+   "obj+0x14c",
+   "obj+0x198",
+   "obj+0x2c0",
+   "obj+0x2c8",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45ee88 bbox_scale",
+   "0x45fba8 bbox_overlap",
+   "0x45ef08 parts_overlap",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 109,
+  "mnemonic": "hurt_kurt",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "damage"
+   }
+  ],
+  "flow": "next",
+  "summary": "Damage Kurt (0x46a604): scaled by the difficulty 0x57423e, ignored while invulnerable (0x573bd4 > 0) or in some states; lowers his health 0x574324 and raises the hurt flash 0x573b20.",
+  "fields": [],
+  "helpers": [
+   "0x46a604 damage_kurt"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 110,
+  "mnemonic": "delete_self",
+  "operands": [],
+  "flow": "end",
+  "summary": "Free this object (sounds, model instance, back to the free list) and return from script_run at once.",
+  "fields": [],
+  "helpers": [
+   "0x43d7bc object_free"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 111,
+  "mnemonic": "set_instance",
+  "operands": [
+   {
+    "type": "u32",
+    "name": "instance (low 16 bits used)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets the object's instance number obj+0x146 (u16) from the low 16 bits of the 4-byte operand.",
+  "fields": [
+   "obj+0x146"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 112,
+  "mnemonic": "teleport_player",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "arena_name"
+   },
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   },
+   {
+    "type": "f32",
+    "name": "yaw"
+   }
+  ],
+  "flow": "next",
+  "summary": "Empty arena_name: moves the player (position 0x5739c0, yaw 0x5739f0) at once within the current arena and flashes the screen. Otherwise schedules a teleport to that arena (0x573c80 arena, 0x573c84..0x573c90 x,y,z,yaw); unknown arena = fatal error, and the script is stopped (obj+0x108 = 0, depth 0, return).",
+  "fields": [],
+  "helpers": [
+   "0x419c54 arena_find",
+   "0x41d2c4 damp_platform_floor",
+   "0x41738c screen_flash_white"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 113,
+  "mnemonic": "spawn_relative",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "dx"
+   },
+   {
+    "type": "f32",
+    "name": "dy"
+   },
+   {
+    "type": "f32",
+    "name": "dz"
+   },
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawns an enemy of type type_name at this object's position plus (dx,dy) rotated by its yaw (obj+0x4c) and plus dz.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x4c"
+  ],
+  "helpers": [
+   "0x440288 sincos_deg",
+   "0x45ca88 enemy_type_find",
+   "0x45cb04 enemy_max_instance",
+   "0x45cdec enemy_spawn"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 114,
+  "mnemonic": "if_player_on_me",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: the player stands on this object (0x573b84 == obj).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 115,
+  "mnemonic": "if_wall",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "rel_angle"
+   },
+   {
+    "type": "f32",
+    "name": "distance"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: a segment from the object's position (z raised when obj+0x148 bit 2) towards yaw+rel_angle of length distance hits the arena geometry.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x4c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x4603d4 probe_wall",
+   "0x421680 bsp_segment_hit",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 116,
+  "mnemonic": "flags_set",
+  "operands": [
+   {
+    "type": "u32",
+    "name": "mask"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x148 |= mask.",
+  "fields": [
+   "obj+0x148"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 117,
+  "mnemonic": "flags_clear",
+  "operands": [
+   {
+    "type": "u32",
+    "name": "mask"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x148 &= ~mask.",
+  "fields": [
+   "obj+0x148"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 118,
+  "mnemonic": "anim_end_frame",
+  "operands": [
+   {
+    "type": "s32",
+    "name": "frame"
+   }
+  ],
+  "flow": "next",
+  "summary": "u16 obj+0x118 (end/hold frame of the current animation, <0 = none) = (low 16 bits of the operand) - 1; 4 bytes are consumed.",
+  "fields": [
+   "obj+0x118"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 119,
+  "mnemonic": "if_count_alive",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "complex",
+    "kind": "compare",
+    "name": "compare",
+    "layout": "u8 op; f32 b; if op==7 or op==8: f32 c. Tested value a = number of active objects in this arena named type_name with health obj+8 > 0. op: 1 a<b, 2 a>b, 3 a<b+0.05, 4 a>b-0.05, 5 |a-b|<0.05, 6 |a-b|>=0.05, 7 b<=a<=c, 8 a<=b or a>=c, anything else = false (helper 0x45da90)."
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Counts living objects named type_name in the arena and branches on the comparison.",
+  "fields": [
+   "arena+0x68",
+   "obj+0x8",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 script_compare",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 120,
+  "mnemonic": "set_pitch",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "pitch"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets obj+0x13c (pitch, degrees).",
+  "fields": [
+   "obj+0x13c"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 121,
+  "mnemonic": "if_floor_below",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "depth"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: a vertical segment from the object's position down by depth hits the arena geometry.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x421680 bsp_segment_hit",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 122,
+  "mnemonic": "turn_pitch",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "speed"
+   },
+   {
+    "type": "f32",
+    "name": "target_pitch"
+   }
+  ],
+  "flow": "next",
+  "summary": "Turns obj+0x13c towards target_pitch by at most speed*frame_time degrees the shortest way round.",
+  "fields": [
+   "obj+0x13c"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 123,
+  "mnemonic": "if_not_in_player_arena",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: the object's arena (obj+0x60) is not the player's arena 0x573a0c.",
+  "fields": [
+   "obj+0x60",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 124,
+  "mnemonic": "path_yaw_offset",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "degrees"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x100 = degrees, added to the heading derived from the path direction.",
+  "fields": [
+   "obj+0x100"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 125,
+  "mnemonic": "clear_gosub_stack",
+  "operands": [],
+  "flow": "next",
+  "summary": "obj+0x248 (gosub depth) = 0: forgets all pending returns.",
+  "fields": [
+   "obj+0x248"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 126,
+  "mnemonic": "aim_pitch_target",
+  "operands": [],
+  "flow": "next",
+  "summary": "Pitch obj+0x13c = atan2(target.z + 3 - z, XY distance to the target point).",
+  "fields": [
+   "obj+0x13c"
+  ],
+  "helpers": [
+   "0x4174ac dist2d",
+   "0x440220 atan2_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 127,
+  "mnemonic": "if_health",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "compare",
+    "name": "compare",
+    "layout": "u8 op; f32 b; if op==7 or op==8: f32 c. Tested value a = the object's health obj+0x8 (s32). op: 1 a<b, 2 a>b, 3 a<b+0.05, 4 a>b-0.05, 5 |a-b|<0.05, 6 |a-b|>=0.05, 7 b<=a<=c, 8 a<=b or a>=c, anything else = false (helper 0x45da90)."
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Branches on the object's health.",
+  "fields": [
+   "obj+0x8",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 script_compare",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 128,
+  "mnemonic": "attach_effect",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name"
+   },
+   {
+    "type": "u8",
+    "name": "slot"
+   },
+   {
+    "type": "u8",
+    "name": "kind"
+   }
+  ],
+  "flow": "next",
+  "summary": "Only when effects detail 0x5742dc is on. name==\"OFF\" and slot==kind: removes the effect obj+0x160[slot] (0x405250). Otherwise, if obj+0x160[slot] is empty: obj+0x160[slot] = 0x4067b8(obj, position obj+0x1b0[slot], slot, kind). The name is only compared with \"OFF\".",
+  "fields": [
+   "obj+0x160",
+   "obj+0x1b0"
+  ],
+  "helpers": [
+   "0x405250 effect_free",
+   "0x4067b8 effect_attach"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 129,
+  "mnemonic": "blow_off_parts",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mode"
+   },
+   {
+    "type": "complex",
+    "name": "parts",
+    "layout": "if mode is 0, 1 or 2: u8 N then N pstr part names; any other mode: nothing"
+   }
+  ],
+  "flow": "next",
+  "summary": "mode 0/1: 0x45c510 creates a \"BLOWOFF\" debris effect from the listed parts and sets their bits in obj+0x2c8 and obj+0x2cc (mode 1 also sets flag 8 on the debris); mode 2: same, but only if effects detail 0x5742dc is on (otherwise just skips the names). The helper returns the new pc.",
+  "fields": [
+   "obj+0x2c8",
+   "obj+0x2cc"
+  ],
+  "helpers": [
+   "0x45c510 blow_off_parts",
+   "0x45c498 blow_off_parts_if_detail"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 130,
+  "mnemonic": "special_130",
+  "operands": [],
+  "flow": "next",
+  "summary": "Calls 0x45d140(obj) (large routine, not analysed).",
+  "fields": [],
+  "helpers": [
+   "0x45d140 unknown"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 131,
+  "mnemonic": "special_event",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "event"
+   }
+  ],
+  "flow": "next",
+  "summary": "event > 50: 0x477cf4(obj, event) (level/cutscene events 0x33, 0x34, 0x35, 0x37, 0x3d, 0x51, 0x5b, 0x5c, 0x5d ...); otherwise global 0x573c80 = -1.",
+  "fields": [
+   "0x573c80"
+  ],
+  "helpers": [
+   "0x477cf4 special_event"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 132,
+  "mnemonic": "spawn_effect",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "chance"
+   },
+   {
+    "type": "u8",
+    "name": "slot"
+   },
+   {
+    "type": "complex",
+    "name": "position",
+    "layout": "if slot==0xFF: f32 x, f32 y, f32 z; otherwise nothing (position = obj+0x1b0 + slot*12)"
+   }
+  ],
+  "flow": "next",
+  "summary": "chance < 150: with probability chance% spawns effect 0x406434 at the position; chance >= 150: with probability (chance-150)% spawns effect 0x4052d4 (0.25, 0x30, 0x10) at the object's position + 5 in z (slot position unused).",
+  "fields": [
+   "obj+0x1b0",
+   "obj+0x60"
+  ],
+  "helpers": [
+   "0x406434 spawn_effect_a",
+   "0x405138 effect_alloc",
+   "0x4052d4 effect_init_b"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 133,
+  "mnemonic": "arena_texture_frame",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "texture_name"
+   },
+   {
+    "type": "u8",
+    "name": "mode"
+   },
+   {
+    "type": "f32",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "Finds the animated texture texture_name in the arena (arena+0x20 pointer array, arena+0x18 count) and sets its frame: mode 0 absolute frame value-1, mode 1 advance by value*frame_time (frames per second), other modes advance by value.",
+  "fields": [
+   "obj+0x60"
+  ],
+  "helpers": [
+   "0x42d9c0 anim_texture_set_frame"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 134,
+  "mnemonic": "turn_roll",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "rate (deg/s)",
+    "layout": "u8 src; if src==3: f32 immediate (5 bytes in total); else u8 index (2 bytes in total). Value = variable src/index: src 0 = global var 0x573b4c[i], 1 = arena var (obj+0x60)->+0x48[i], 2 = own var obj+0x234[i], any other src (4, 5, ...) = linked object's var (obj+0x2b8)->+0x234[i] (a dummy 0 if there is no link); an index outside 0..3 is treated as 0"
+   }
+  ],
+  "flow": "next",
+  "summary": "Roll/bank angle obj+0x54 += value * frame time, wrapped to [0,360).",
+  "fields": [
+   "obj+0x54"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 135,
+  "mnemonic": "raise_573aa8",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "v"
+   }
+  ],
+  "flow": "next",
+  "summary": "0x467f7c: global 0x573aa8 = max(0x573aa8, v) (Kurt-related).",
+  "fields": [
+   "0x573aa8"
+  ],
+  "helpers": [
+   "0x467f7c max_573aa8"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 136,
+  "mnemonic": "spawn_debris",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "count"
+   },
+   {
+    "type": "f32",
+    "name": "vx"
+   },
+   {
+    "type": "f32",
+    "name": "vy"
+   },
+   {
+    "type": "f32",
+    "name": "vz"
+   },
+   {
+    "type": "f32",
+    "name": "spread"
+   },
+   {
+    "type": "u8",
+    "name": "absolute"
+   },
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   },
+   {
+    "type": "f32",
+    "name": "life"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawns count particles (only 1 when effects detail 0x5742dc is off, none if count<=1): template 0x491eb4 with position (x,y,z) (+ object position if absolute==0), velocity (vx,vy,vz) + random*spread*2^-15 (z range biased upward), life = life + rand*0.0005.",
+  "fields": [
+   "0x491ec0",
+   "0x491ed0",
+   "0x491ee0",
+   "0x5742dc"
+  ],
+  "helpers": [
+   "0x406b3c spawn_particle"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 137,
+  "mnemonic": "light_group",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "tri_group"
+   },
+   {
+    "type": "f32",
+    "name": "a"
+   },
+   {
+    "type": "f32",
+    "name": "radius"
+   },
+   {
+    "type": "f32",
+    "name": "c"
+   }
+  ],
+  "flow": "next",
+  "summary": "Relights the arena triangles of group tri_group with the light position/direction left in 0x4d5374/0x4d5358 by a previous opcode 138/139 (a -> 0x4d5370, radius^2*k -> 0x4d5354, c -> 0x4d5364).",
+  "fields": [
+   "arena+0x10",
+   "arena+0x28"
+  ],
+  "helpers": [
+   "0x40c828 light_triangle_group"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 138,
+  "mnemonic": "light_group_dir",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "tri_group"
+   },
+   {
+    "type": "f32",
+    "name": "a"
+   },
+   {
+    "type": "f32",
+    "name": "radius"
+   },
+   {
+    "type": "f32",
+    "name": "c"
+   },
+   {
+    "type": "f32",
+    "name": "light_x"
+   },
+   {
+    "type": "f32",
+    "name": "light_y"
+   },
+   {
+    "type": "f32",
+    "name": "light_z"
+   },
+   {
+    "type": "f32",
+    "name": "dir_x"
+   },
+   {
+    "type": "f32",
+    "name": "dir_y"
+   },
+   {
+    "type": "f32",
+    "name": "dir_z"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets the light position (0x4d5374..7c) and direction (0x4d5358..60, normalized; zero = omni) and relights triangle group tri_group.",
+  "fields": [
+   "arena+0x10",
+   "arena+0x28"
+  ],
+  "helpers": [
+   "0x40c828 light_triangle_group"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 139,
+  "mnemonic": "light_group_point",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "tri_group"
+   },
+   {
+    "type": "f32",
+    "name": "a"
+   },
+   {
+    "type": "f32",
+    "name": "radius"
+   },
+   {
+    "type": "f32",
+    "name": "c"
+   },
+   {
+    "type": "f32",
+    "name": "light_x"
+   },
+   {
+    "type": "f32",
+    "name": "light_y"
+   },
+   {
+    "type": "f32",
+    "name": "light_z"
+   }
+  ],
+  "flow": "next",
+  "summary": "Like 138 with the direction zeroed (omni light at light_x/y/z).",
+  "fields": [
+   "arena+0x10",
+   "arena+0x28"
+  ],
+  "helpers": [
+   "0x40c828 light_triangle_group"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 140,
+  "mnemonic": "group_set_texture",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "tri_group"
+   },
+   {
+    "type": "s16",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "Stores value into the s16 at +6 (texture/colour index) of every arena triangle of group tri_group.",
+  "fields": [
+   "arena+0x10",
+   "arena+0x28"
+  ],
+  "helpers": [
+   "0x40c7e8 tri_group_set_texture"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 142,
+  "mnemonic": "fan_create",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "hotspot_id"
+   },
+   {
+    "type": "pstr",
+    "name": "name"
+   },
+   {
+    "type": "u8",
+    "name": "param"
+   },
+   {
+    "type": "u8",
+    "name": "type"
+   },
+   {
+    "type": "f32",
+    "name": "strength"
+   }
+  ],
+  "flow": "next",
+  "summary": "Creates a fan (updraft) named name on the arena's type-7 hotspot hotspot_id (fatal error if missing); with type 6 the strength operand is a time and the speed is computed from the hotspot height.",
+  "fields": [
+   "arena+0x45e"
+  ],
+  "helpers": [
+   "0x413a94 fan_create_at_hotspot"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 143,
+  "mnemonic": "fan_remove",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name"
+   }
+  ],
+  "flow": "next",
+  "summary": "Removes the fan named name from the arena's fan list (fatal error if not found).",
+  "fields": [
+   "arena+0x45e"
+  ],
+  "helpers": [
+   "0x413fa0 fan_remove"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 144,
+  "mnemonic": "fan_create_box",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name"
+   },
+   {
+    "type": "f32",
+    "name": "min_x"
+   },
+   {
+    "type": "f32",
+    "name": "min_y"
+   },
+   {
+    "type": "f32",
+    "name": "min_z"
+   },
+   {
+    "type": "f32",
+    "name": "max_x"
+   },
+   {
+    "type": "f32",
+    "name": "max_y"
+   },
+   {
+    "type": "f32",
+    "name": "max_z"
+   },
+   {
+    "type": "u8",
+    "name": "param"
+   },
+   {
+    "type": "u8",
+    "name": "type"
+   },
+   {
+    "type": "f32",
+    "name": "strength"
+   }
+  ],
+  "flow": "next",
+  "summary": "Creates a fan named name with an explicit box (6 floats) instead of a hotspot; other parameters as in fan_create.",
+  "fields": [
+   "arena+0x45e"
+  ],
+  "helpers": [
+   "0x413ba0 fan_create_box"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 145,
+  "mnemonic": "fan_set_strength",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name"
+   },
+   {
+    "type": "f32",
+    "name": "strength"
+   },
+   {
+    "type": "f32",
+    "name": "time"
+   }
+  ],
+  "flow": "next",
+  "summary": "Changes the strength of fan name to strength, immediately if time == 0, else linearly over time seconds.",
+  "fields": [
+   "arena+0x45e"
+  ],
+  "helpers": [
+   "0x414070 fan_set_strength"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 146,
+  "mnemonic": "conveyor_create",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "tri_group"
+   },
+   {
+    "type": "pstr",
+    "name": "name"
+   },
+   {
+    "type": "f32",
+    "name": "speed"
+   },
+   {
+    "type": "f32",
+    "name": "dir_x"
+   },
+   {
+    "type": "f32",
+    "name": "dir_y"
+   },
+   {
+    "type": "f32",
+    "name": "dir_z"
+   },
+   {
+    "type": "f32",
+    "name": "p7"
+   },
+   {
+    "type": "f32",
+    "name": "p8"
+   }
+  ],
+  "flow": "next",
+  "summary": "Creates a conveyor (fan list entry of type -1) named name that pushes objects standing on triangles of group tri_group along the normalized direction at speed (see conveyor_push 0x413c80); p7 and p8 are multiplied by 1/|dir|.",
+  "fields": [
+   "arena+0x45e"
+  ],
+  "helpers": [
+   "0x414110 conveyor_create"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 147,
+  "mnemonic": "conveyor_remove",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name"
+   }
+  ],
+  "flow": "next",
+  "summary": "Removes the conveyor/fan named name (same function as fan_remove).",
+  "fields": [
+   "arena+0x45e"
+  ],
+  "helpers": [
+   "0x414210 conveyor_remove (-> 0x413fa0)"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 148,
+  "mnemonic": "conveyor_set_speed",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name"
+   },
+   {
+    "type": "f32",
+    "name": "speed"
+   },
+   {
+    "type": "f32",
+    "name": "time"
+   }
+  ],
+  "flow": "next",
+  "summary": "Changes the speed of conveyor/fan name (same function as fan_set_strength).",
+  "fields": [
+   "arena+0x45e"
+  ],
+  "helpers": [
+   "0x41421c conveyor_set_speed (-> 0x414070)"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 149,
+  "mnemonic": "spawn_connector",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   },
+   {
+    "type": "f32",
+    "name": "yaw"
+   },
+   {
+    "type": "s32",
+    "name": "instance"
+   },
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "pstr",
+    "name": "other_arena"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Creates an object (a door) connecting this arena with other_arena: if an object of that type already links the two arenas it is moved into this arena (unless it sits in the player's current/neighbour arena), otherwise a new one is spawned with door defaults (spawn flag 1), yaw, new+0x302 = other arena, flags 0x1108000 and bit masks of its model parts named LOCK (new+0x326) and starting with HC (new+0x32a). Nothing happens if other_arena is NONE.",
+  "fields": [
+   "new+0x4c",
+   "new+0x302",
+   "new+0x148",
+   "new+0x326",
+   "new+0x32a",
+   "other+0x2bc"
+  ],
+  "helpers": [
+   "0x41a244 arena_find_by_name",
+   "0x45ca88 enemy_type_find",
+   "0x45cb88 find_connector",
+   "0x43ca00 object_change_arena",
+   "0x45cdec enemy_spawn"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 150,
+  "mnemonic": "door_set_anims",
+  "operands": [
+   {
+    "type": "off32",
+    "name": "anim_a (data: animation record, not code)",
+    "role": "data"
+   },
+   {
+    "type": "off32",
+    "name": "anim_b (data: animation record, not code)",
+    "role": "data"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets the two animations obj+0x306 and obj+0x30a; each offset points to a CMI record that is either the animation data itself or (first u32 == 0) a u32 0 followed by an animation name looked up in the current arena (0x440b88).",
+  "fields": [
+   "obj+0x306",
+   "obj+0x30a"
+  ],
+  "helpers": [
+   "0x440b88 anim_ref_resolve",
+   "0x440adc arena_find_animation"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 151,
+  "mnemonic": "door_set_names",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "name0"
+   },
+   {
+    "type": "pstr",
+    "name": "name1"
+   },
+   {
+    "type": "pstr",
+    "name": "name2"
+   },
+   {
+    "type": "pstr",
+    "name": "name3"
+   }
+  ],
+  "flow": "next",
+  "summary": "Stores four string pointers (NULL for NONE) into obj+0x31a, obj+0x322, obj+0x316, obj+0x31e (in that order).",
+  "fields": [
+   "obj+0x316",
+   "obj+0x31a",
+   "obj+0x31e",
+   "obj+0x322"
+  ],
+  "helpers": [
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 152,
+  "mnemonic": "door_set_flags",
+  "operands": [
+   {
+    "type": "u32",
+    "name": "flags"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x312 = (obj+0x312 & 0xF) | (flags & ~0xF): replaces the door flags except their low 4 bits.",
+  "fields": [
+   "obj+0x312"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 153,
+  "mnemonic": "door_set_param",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets the float obj+0x30e (door parameter, 20.0 by default).",
+  "fields": [
+   "obj+0x30e"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 154,
+  "mnemonic": "wait_anim_frame",
+  "operands": [
+   {
+    "type": "s16",
+    "name": "frame"
+   }
+  ],
+  "flow": "yield (re-executes this opcode next frame) until the animation reaches the frame",
+  "summary": "obj+0x108 = address of this opcode (so it is re-executed every frame); continues when the animation is finished (obj+0x114==0 or obj+0x118==0xFF00), or frame>=0 and current frame obj+0xe4 >= frame, or frame==-1 and (obj+0xe4 == end frame obj+0x118 or obj+0x118 < 0); otherwise returns (retry next frame). Scripts mostly use 32767 = wait for the end of the animation.",
+  "fields": [
+   "obj+0x108",
+   "obj+0xe4",
+   "obj+0x114",
+   "obj+0x118"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 155,
+  "mnemonic": "if_timer_value",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "seconds",
+    "layout": "value: u8 kind, then kind==3: f32 literal; any other kind: u8 var index i (kind 0 = global var 0x573b4c[i], 1 = arena var (arena+0x48)[i], 2 = own var obj+0x234[i], other = var of linked object obj+0x2b8 (+0x234)[i]; i clamped to 0..3)"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Same as opcode 18 with the duration given as a value operand.",
+  "fields": [
+   "obj+0x26c",
+   "obj+0x248"
+  ],
+  "helpers": [
+   "0x440944 script_var_ptr"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 156,
+  "mnemonic": "spawn_at_point",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "point_index"
+   },
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawns an enemy of type type_name at this object's point point_index (vec3 at obj+0x1b0 + 12*index).",
+  "fields": [
+   "obj+0x1b0"
+  ],
+  "helpers": [
+   "0x45ca88 enemy_type_find",
+   "0x45cb04 enemy_max_instance",
+   "0x45cdec enemy_spawn"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 157,
+  "mnemonic": "vel_away_from",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "model_name"
+   },
+   {
+    "type": "s32",
+    "name": "id (-1 = any)"
+   },
+   {
+    "type": "f32",
+    "name": "speed"
+   }
+  ],
+  "flow": "next",
+  "summary": "Find the first active object of the own arena with that model name (and id +0x144>>16 unless -1); velocity = normalized(self - it) * speed (a negative speed moves toward it); obj+0xec = 0. Nothing if not found or at the same position.",
+  "fields": [
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x30",
+   "obj+0xec"
+  ],
+  "helpers": [
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 158,
+  "mnemonic": "touch_damage",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "targets"
+   },
+   {
+    "type": "u16",
+    "name": "damage"
+   },
+   {
+    "type": "u32",
+    "name": "flags"
+   },
+   {
+    "type": "complex",
+    "kind": "optional",
+    "name": "hit_target",
+    "layout": "off32 target, present only if (flags & 2) != 0"
+   }
+  ],
+  "flow": "next, goto on hit, or return if dead",
+  "summary": "Collision damage using the object's box (obj+0x198): targets bit 0 = the player, bit 1 = other objects (they lose health and get hit events obj+0x21d/0x21e); flags bit 0 = this object dies on a hit. If the object is dead afterwards (obj+8 == 0) the handler returns without saving pc; else on a hit with flags bit 1 it does a goto target.",
+  "fields": [
+   "obj+0x8",
+   "obj+0x198",
+   "obj+0x108",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45cf60 collide_damage",
+   "0x46a498 damp_damage",
+   "0x43d6d4 object_kill"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 159,
+  "mnemonic": "spawn_box",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "spawn_pos",
+    "name": "position",
+    "layout": "u8 mode; mode 1 or 2: f32 x, f32 y, f32 z; other modes: no further bytes (mode 0 = own position)"
+   },
+   {
+    "type": "f32",
+    "name": "size_a"
+   },
+   {
+    "type": "f32",
+    "name": "size_b"
+   },
+   {
+    "type": "f32",
+    "name": "size_c"
+   },
+   {
+    "type": "pstr",
+    "name": "name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Create an object with a box model (model_create_box(name, a, b, c)) in the own arena at: mode 0 the own position, mode 1 own position + local offset (0x45d770), mode 2 the absolute point; object type obj+0x11c = 7, name copied to obj+0x322, sizes to obj+0x316..0x31e, script obj+0x108.",
+  "fields": [
+   "obj+0x60"
+  ],
+  "helpers": [
+   "0x45d770 local_to_world",
+   "0x45cca8 spawn_box_object",
+   "0x404188 model_create_box"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 160,
+  "mnemonic": "if_yaw",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "compare",
+    "name": "compare",
+    "layout": "u8 op; f32 b; if op==7 or op==8: f32 c. Tested value a = the object's yaw obj+0x4c normalized to [0,360). op: 1 a<b, 2 a>b, 3 a<b+0.05, 4 a>b-0.05, 5 |a-b|<0.05, 6 |a-b|>=0.05, 7 b<=a<=c, 8 a<=b or a>=c, anything else = false (helper 0x45da90)."
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Branches on the object's yaw.",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 script_compare",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 161,
+  "mnemonic": "spawn_flagged",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   },
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawns type_name at absolute (x,y,z) in this object's arena with the given script; SW_EWJ and BONEFLC become box objects (6x6x6 and 9x9x6, 0x45cca8), other names enemies with the next free instance number (skipped if the type is unknown); the new object's flags (+0x148) are set to 0x2008A6.",
+  "fields": [
+   "obj+0x60",
+   "new+0x148"
+  ],
+  "helpers": [
+   "0x45ca88 enemy_type_find",
+   "0x45cb04 enemy_max_instance",
+   "0x45cdec enemy_spawn",
+   "0x45cca8 box_object_spawn",
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 162,
+  "mnemonic": "arena_counter_set",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "index (1-16)"
+   },
+   {
+    "type": "s16",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets the arena counter arena+0xcc[(index-1)%16] (s32) to value.",
+  "fields": [
+   "arena+0xcc"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 163,
+  "mnemonic": "if_arena_counter",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "index (1-16)"
+   },
+   {
+    "type": "complex",
+    "kind": "compare",
+    "name": "compare",
+    "layout": "u8 op; f32 b; if op==7 or op==8: f32 c. Tested value a = arena counter arena+0xcc[(index-1)%16] (s32). op: 1 a<b, 2 a>b, 3 a<b+0.05, 4 a>b-0.05, 5 |a-b|<0.05, 6 |a-b|>=0.05, 7 b<=a<=c, 8 a<=b or a>=c, anything else = false (helper 0x45da90)."
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Compares the arena counter with b (and c) and performs the action if the comparison is true.",
+  "fields": [
+   "arena+0xcc",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 script_compare",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 164,
+  "mnemonic": "path_speed_by_kurt",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "enable"
+   },
+   {
+    "type": "complex",
+    "name": "params",
+    "layout": "if enable!=0: f32 distance, f32 speed_far, f32 speed_mid, f32 speed_near; otherwise nothing"
+   }
+  ],
+  "flow": "next",
+  "summary": "enable!=0: obj+0x302..0x30e = the 4 floats, obj+0xe8 = speed_mid, obj+0x14b |= 0x10: each frame the path speed obj+0xe8 accelerates toward speed_far/mid/near depending on Kurt's distance ahead along the heading compared with distance. enable==0: obj+0x14b &= ~0x10.",
+  "fields": [
+   "obj+0x302",
+   "obj+0x306",
+   "obj+0x30a",
+   "obj+0x30e",
+   "obj+0xe8",
+   "obj+0x14b"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 165,
+  "mnemonic": "if_no_bomb",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If no World's Most Interesting Bomb is active (0x573c24 == NULL), perform the action.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 166,
+  "mnemonic": "if_bomb_visible",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If the Interesting Bomb 0x573c24 exists and the segment from self (z+5) to it (z+5) is not blocked by the BSP of Kurt's arena 0x573a0c (nor of 0x573a68 when 0x573b00 == 0 and 0x573a68 is set), perform the action.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x421680 bsp_segment_hit",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 167,
+  "mnemonic": "move_to_bomb",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "distance"
+   }
+  ],
+  "flow": "next",
+  "summary": "If the Interesting Bomb 0x573c24 exists: destination = bomb position + distance along the direction bomb->self plus a random sideways offset of up to +-min(distance, 6), z = bomb z + 2.5 + obj+0x5c; then start walking like 78 (obj+0x11e = 78).",
+  "fields": [
+   "obj+0x120",
+   "obj+0x11e",
+   "obj+0xec",
+   "obj+0x5c",
+   "obj+0x14c"
+  ],
+  "helpers": [
+   "0x45a1dc plan_path"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 168,
+  "mnemonic": "group_set_hit_flags",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "tri_group (1-16)"
+   },
+   {
+    "type": "u8",
+    "name": "flags"
+   }
+  ],
+  "flow": "next",
+  "summary": "arena+0x6c[(g-1)%16] = flags, the hit behaviour of triangle group g (used by 0x40d560: low bits = hit types that count; 0x80 = destructible: a hit clears triangle flag 0x10 and sets the group bit in arena+0x114; 0x40 = a hit always counts; 0x20 = hit returns 2). With bit 0x80 it also sets flag 0x10 on the group now and its bit in arena+0x110.",
+  "fields": [
+   "arena+0x6c",
+   "arena+0x110"
+  ],
+  "helpers": [
+   "0x40c694 tri_group_set_state"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 169,
+  "mnemonic": "set_roll_radius",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "value",
+    "layout": "u8 src; if src==3: f32 immediate (5 bytes in total); else u8 index (2 bytes in total). Value = variable src/index: src 0 = global var 0x573b4c[i], 1 = arena var (obj+0x60)->+0x48[i], 2 = own var obj+0x234[i], any other src (4, 5, ...) = linked object's var (obj+0x2b8)->+0x234[i] (a dummy 0 if there is no link); an index outside 0..3 is treated as 0"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x326 = value: radius of a rolling object (the rolling matrix of 85 turns by distance/(2*pi*radius)*360 degrees; <= 0 means 1). Unaligned; other object kinds use these bytes as a part mask.",
+  "fields": [
+   "obj+0x326"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 170,
+  "mnemonic": "inherit_kurt_vel",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "factor"
+   }
+  ],
+  "flow": "next",
+  "summary": "Velocity += Kurt's velocity * factor: horizontal from Kurt's local speeds 0x573b0c/0x573b10 rotated by his yaw 0x5739f0 (times 30), vz from his vertical speed 0x573a3c.",
+  "fields": [
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x30"
+  ],
+  "helpers": [
+   "0x440288 sincos_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 171,
+  "mnemonic": "if_is_573c30",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: this object is the one in global 0x573c30 (a player-related object pointer: target/ridden object?).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 172,
+  "mnemonic": "explosion",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "point",
+    "name": "position",
+    "layout": "u8 mode; if mode==3: u8 point_index (vec3 at obj+0x1b0 + 12*index); else f32 x, f32 y, f32 z (mode 0 absolute, 1 relative to the object's position, 2 object-local offset rotated by its yaw via 0x45d770, other = absolute)."
+   },
+   {
+    "type": "f32",
+    "name": "scale"
+   }
+  ],
+  "flow": "next",
+  "summary": "Creates an explosion effect object (with sound) at the position.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x1b0"
+  ],
+  "helpers": [
+   "0x45d770 obj_local_to_world",
+   "0x43cb2c explosion_spawn"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 173,
+  "mnemonic": "teleport_player_keep",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "teleport",
+    "name": "target",
+    "layout": "pstr arena_name; if arena_name is empty (L==0 or first char NUL): pstr arena_name2, f32 dx, f32 dy, f32 dz, f32 dyaw; else no more bytes."
+   }
+  ],
+  "flow": "next",
+  "summary": "Schedules a teleport of the player to arena_name keeping the current position and yaw, or (empty first name) to arena_name2 at the current position/yaw plus (dx,dy,dz,dyaw). Unknown arena = fatal error, script stopped.",
+  "fields": [],
+  "helpers": [
+   "0x419c54 arena_find"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 174,
+  "mnemonic": "if_ammo",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "slot"
+   },
+   {
+    "type": "u8",
+    "name": "compare"
+   },
+   {
+    "type": "f32",
+    "name": "a"
+   },
+   {
+    "type": "complex",
+    "name": "b",
+    "layout": "if compare==7 or compare==8: f32 b; otherwise nothing"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: compare(Kurt's counter int[0x5743ef + slot*4] (weapon/ammo counters), a, b) with 0x45da90: 1 <, 2 >, 3 <=, 4 >=, 5 ==, 6 != (0.05 tolerance), 7 a<=v<=b, 8 v<=a or v>=b.",
+  "fields": [
+   "0x5743ef"
+  ],
+  "helpers": [
+   "0x45da90 compare_values"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 175,
+  "mnemonic": "if_inventory",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "item_type"
+   },
+   {
+    "type": "u8",
+    "name": "compare"
+   },
+   {
+    "type": "f32",
+    "name": "a"
+   },
+   {
+    "type": "complex",
+    "name": "b",
+    "layout": "if compare==7 or compare==8: f32 b; otherwise nothing"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: compare(sum of counts (+4) of the inventory entries (0x57432c, 0x24 bytes each, 0x5743e0 entries) whose type (+0) == item_type, a, b); compare as opcode 174.",
+  "fields": [
+   "0x57432c",
+   "0x5743e0"
+  ],
+  "helpers": [
+   "0x45da90 compare_values"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 176,
+  "mnemonic": "if_flag_40000",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: bit 0x4 of byte obj+0x14a (0x40000 of the flags dword obj+0x148) is set.",
+  "fields": [
+   "obj+0x148",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 177,
+  "mnemonic": "set_2c4",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "value",
+    "layout": "u8 src; if src==3: f32 immediate (5 bytes in total); else u8 index (2 bytes in total). Value = variable src/index: src 0 = global var 0x573b4c[i], 1 = arena var (obj+0x60)->+0x48[i], 2 = own var obj+0x234[i], any other src (4, 5, ...) = linked object's var (obj+0x2b8)->+0x234[i] (a dummy 0 if there is no link); an index outside 0..3 is treated as 0"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x2c4 = value (float, 1000 by default; meaning unknown).",
+  "fields": [
+   "obj+0x2c4"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 178,
+  "mnemonic": "explosion_damage",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "point",
+    "name": "position",
+    "layout": "u8 mode; if mode==3: u8 point_index (vec3 at obj+0x1b0 + 12*index); else f32 x, f32 y, f32 z (mode 0 absolute, 1 relative to the object's position, 2 object-local offset rotated by its yaw via 0x45d770, other = absolute)."
+   },
+   {
+    "type": "f32",
+    "name": "scale"
+   },
+   {
+    "type": "f32",
+    "name": "damage"
+   },
+   {
+    "type": "f32",
+    "name": "radius"
+   },
+   {
+    "type": "u8",
+    "name": "flags"
+   }
+  ],
+  "flow": "next",
+  "summary": "Creates an explosion effect at the position and applies blast damage round(damage) within radius (0x463a94(pos, damage, radius, 1, 0, flags, -5); flags & 2 = also damage objects of the player's arena).",
+  "fields": [
+   "obj+0x10",
+   "obj+0x1b0"
+  ],
+  "helpers": [
+   "0x45d770 obj_local_to_world",
+   "0x43cb2c explosion_spawn",
+   "0x463a94 blast_damage"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 179,
+  "mnemonic": "spawn_partner",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawns an enemy of type type_name at this object's position and links both as partners (obj+0x2b8 of each points to the other).",
+  "fields": [
+   "obj+0x10",
+   "obj+0x2b8"
+  ],
+  "helpers": [
+   "0x45ca88 enemy_type_find",
+   "0x45cb04 enemy_max_instance",
+   "0x45cdec enemy_spawn"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 180,
+  "mnemonic": "snap_to_partner",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "optional",
+    "name": "offset",
+    "layout": "u8 add_offset; if add_offset != 0: f32 dx, f32 dy, f32 dz"
+   }
+  ],
+  "flow": "next",
+  "summary": "If the object has a partner (obj+0x2b8), copies the partner's position into obj+0x10 and adds (dx,dy,dz) when given.",
+  "fields": [
+   "obj+0x2b8",
+   "obj+0x10"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 181,
+  "mnemonic": "boss_bar",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "boss_bar",
+    "name": "source",
+    "layout": "u8 mode; if mode==0: u8 index, s32 max; elif mode==1: u8 index, f32 lo, f32 hi, s32 max; else no more bytes (the handler then uses uninitialised values)."
+   }
+  ],
+  "flow": "next",
+  "summary": "HUD health bar (only if 0x573a38 != 0): value = max - arena counter[(index-1)%16] (mode 0) or round((hi - arena var arena+0x48[index]) / (hi - lo) * max) (mode 1), clamped to max; stored in the arena's own object at arena+0x118 (health +0x120, max u16 +0x3ba, active +0x11e = 1); 0x573c78 = that object, 0x573c74 = 1.0 (0 when value <= 0).",
+  "fields": [
+   "arena+0xcc",
+   "arena+0x48",
+   "arena+0x118"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 182,
+  "mnemonic": "switch_goto",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "index"
+   },
+   {
+    "type": "repeat",
+    "count": "u8",
+    "items": [
+     {
+      "type": "off32",
+      "name": "target"
+     }
+    ]
+   }
+  ],
+  "flow": "goto",
+  "summary": "Jump table on (int)variable src/index; if 0 <= v < n it does a goto (obj+0x108 = pc = target). Original bug: the skip loop never advances pc, so it always jumps to entry [1] whatever v is; if v is out of range, execution continues right after entry [0] (table start + 4), not after the table.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 183,
+  "mnemonic": "switch_gosub",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "index"
+   },
+   {
+    "type": "repeat",
+    "count": "u8",
+    "items": [
+     {
+      "type": "off32",
+      "name": "target"
+     }
+    ]
+   }
+  ],
+  "flow": "gosub",
+  "summary": "Jump table on (int)variable src/index; if 0 <= v < n: gosub entry [v], returning after the whole table. If v is out of range, execution continues at table start + 4 (same bug as 182).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440944 var_ptr",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 184,
+  "mnemonic": "explode",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "damage"
+   },
+   {
+    "type": "f32",
+    "name": "radius"
+   },
+   {
+    "type": "f32",
+    "name": "height_scale"
+   }
+  ],
+  "flow": "end",
+  "summary": "obj+0x148 |= 0x20; if damage and radius are both non-zero, apply (int)damage of radius damage around the own position; scale the bbox z range (obj+0x1a0, obj+0x1ac) about its middle by height_scale; kill the object (object_kill 0x43d6d4: death script obj+0x110 if set, else the default death) and return from script_run.",
+  "fields": [
+   "obj+0x148",
+   "obj+0x1a0",
+   "obj+0x1ac",
+   "obj+0x110"
+  ],
+  "helpers": [
+   "0x463a94 radius_damage",
+   "0x43d6d4 object_kill"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 185,
+  "mnemonic": "if_speed",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If the own current walking speed obj+0x34 passes the condition, perform the action.",
+  "fields": [
+   "obj+0x34",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 186,
+  "mnemonic": "anim_fps_from_speed",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "unused"
+   },
+   {
+    "type": "f32",
+    "name": "stride"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0xe0 = obj+0x34 (current speed) * 30 / stride (the u8 is read and ignored).",
+  "fields": [
+   "obj+0xe0",
+   "obj+0x34"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 187,
+  "mnemonic": "random_kick",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "horizontal"
+   },
+   {
+    "type": "f32",
+    "name": "vertical"
+   }
+  ],
+  "flow": "next",
+  "summary": "Velocity += a random horizontal direction (rand(360) degrees) * horizontal * random 0.5..1.5, and vz += vertical * random 0.5..1.5.",
+  "fields": [
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x30"
+  ],
+  "helpers": [
+   "0x402b24 rand_n",
+   "0x440288 sincos_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 188,
+  "mnemonic": "if_target_dist2d",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If the horizontal (XY) distance from self to the target point 0x57fc34 passes the condition, perform the action.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x4174ac dist2d",
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 189,
+  "mnemonic": "lob_to_kurt",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "mode189",
+    "name": "args",
+    "layout": "u8 mode; mode 0: f32 max_speed, f32 target_z; mode 1: f32 max_speed (target_z = Kurt's z 0x5739c8); any other mode: no further bytes and no effect"
+   }
+  ],
+  "flow": "next",
+  "summary": "If target_z <= own z: solve the fall time t (gravity obj+0x48 * -0.5, current vz obj+0x30) and set the horizontal velocity toward Kurt so the object lands on him: speed = obj+0x44*0.5*t + dist/t, at most max_speed.",
+  "fields": [
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x30",
+   "obj+0x44",
+   "obj+0x48"
+  ],
+  "helpers": [
+   "0x45d6d4 solve_quadratic"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 190,
+  "mnemonic": "fan_enable",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "enable"
+   },
+   {
+    "type": "pstr",
+    "name": "name"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets (enable != 0) or clears bit 0 of the flags (+0x1c) of the fan/conveyor named name, if it exists.",
+  "fields": [
+   "arena+0x45e"
+  ],
+  "helpers": [
+   "0x4140e4 fan_set_enabled"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 191,
+  "mnemonic": "if_kurt_delta",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "axis (0=x, 1=y, 2=z; +0x80 = signed)"
+   },
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Take component axis&0x7f of (Kurt's real position 0x5739c0 - own position), as an absolute value unless bit 0x80 is set; if it passes the condition, perform the action.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 192,
+  "mnemonic": "if_no_flat_floor_at",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "dx"
+   },
+   {
+    "type": "f32",
+    "name": "dy"
+   },
+   {
+    "type": "f32",
+    "name": "depth"
+   },
+   {
+    "type": "f32",
+    "name": "threshold"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: no floor below the object-local point (dx,dy), or |float at +8 of the hit| (probably the normal's z) < threshold.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x4c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x46046c probe_floor",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 193,
+  "mnemonic": "face_mode",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "face_mode",
+    "name": "mode",
+    "layout": "u8 mode; if mode==3: pstr name; other modes have no further bytes"
+   }
+  ],
+  "flow": "next",
+  "summary": "mode 1: yaw = direction of the velocity (obj+0x28, 0x2c) when both components are non-zero; mode 2: the same plus pitch obj+0x13c = atan2(vz, horizontal speed) when both are non-zero; mode 3: copy the yaw of the first active object of the own arena whose model name is name; other modes: nothing.",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x13c",
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x30"
+  ],
+  "helpers": [
+   "0x440220 atan2_deg",
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 194,
+  "mnemonic": "group_state_near_player",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "op"
+   },
+   {
+    "type": "u8",
+    "name": "first_group"
+   },
+   {
+    "type": "u8",
+    "name": "last_group"
+   },
+   {
+    "type": "u8",
+    "name": "below"
+   },
+   {
+    "type": "u8",
+    "name": "above"
+   }
+  ],
+  "flow": "next",
+  "summary": "If the group g of the triangle under the player (0x573c10, flags >> 24) satisfies 0 < first <= g <= last: for every group i in first..last applies op (as in 98, on the player's arena 0x573a0c) when g-below <= i <= g+above and the opposite op (0<->1, 2<->3, 4<->5) otherwise, only where the arena masks say the state changes.",
+  "fields": [
+   "arena+0x10c",
+   "arena+0x110"
+  ],
+  "helpers": [
+   "0x40c694 tri_group_set_state"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 195,
+  "mnemonic": "if_hit_weapon",
+  "operands": [
+   {
+    "type": "s8",
+    "name": "weapon"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: s8 obj+0x21d (type of what caused the last hit: projectile type 1..4, 0xFC/0xFD for other damage) == weapon.",
+  "fields": [
+   "obj+0x21d"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 196,
+  "mnemonic": "set_camera_limit_yield",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "value",
+    "layout": "u8 kind; if kind==3: f32 literal; else u8 index (0..3, out of range -> 0) of a float variable (0x440944): kind 0 global 0x573b4c[i], 1 arena+0x48[i], 2 obj+0x234[i], other (>=4) partner (obj+0x2b8)+0x234[i]."
+   }
+  ],
+  "flow": "yield (returns without saving pc; next frame restarts at obj+0x108)",
+  "summary": "Sets the float at player-arena (0x573a0c)+0x462 (limit used by 0x4612e0) and returns from script_run without saving pc, so the next frame restarts at obj+0x108.",
+  "fields": [
+   "arena+0x462"
+  ],
+  "helpers": [
+   "0x440944 script_var_ref"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 197,
+  "mnemonic": "find_advance_spot",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Like 46 without the visibility tests and with 2D distances (5..400): a type-5 waypoint no farther from self than Kurt and closer to Kurt than self becomes the destination with obj+0x11e = 197, else obj+0x11e = 0. If obj+0x11e == 197, perform the action.",
+  "fields": [
+   "obj+0x11e",
+   "obj+0x120",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45dfac find_advance_spot",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 198,
+  "mnemonic": "set_weak_parts",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "part_prefix"
+   },
+   {
+    "type": "u8",
+    "name": "prefix_len"
+   },
+   {
+    "type": "u32",
+    "name": "hit_points"
+   },
+   {
+    "type": "u32",
+    "name": "unknown"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x149 |= 0x20; obj+0x302 = part name prefix, obj+0x306 = number of characters compared; the 8 per-part hit counters u16 obj+0x30e[i] and u16 obj+0x31e[i] (max) = hit_points (low 16 bits); obj+0x30a = unknown. Parts whose name matches the prefix take damage individually (see 0x462384 users).",
+  "fields": [
+   "obj+0x149",
+   "obj+0x302",
+   "obj+0x306",
+   "obj+0x30a",
+   "obj+0x30e",
+   "obj+0x31e"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 199,
+  "mnemonic": "set_104",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "value",
+    "layout": "u8 kind; if kind==3: f32 literal; else u8 index (0..3, out of range -> 0) of a float variable (0x440944): kind 0 global 0x573b4c[i], 1 arena+0x48[i], 2 obj+0x234[i], other (>=4) partner (obj+0x2b8)+0x234[i]."
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x104 = value (float).",
+  "fields": [
+   "obj+0x104"
+  ],
+  "helpers": [
+   "0x440944 script_var_ref"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 200,
+  "mnemonic": "move_to_point",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "speed"
+   },
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Sets the per-axis velocities obj+0x294/0x298/0x29c to move towards (x,y,z) at speed (z ignored when obj+0x148 bit 2) and performs the action once the Manhattan distance is < 0.5.",
+  "fields": [
+   "obj+0x294",
+   "obj+0x298",
+   "obj+0x29c",
+   "obj+0x148",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 201,
+  "mnemonic": "push_dir",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "speed"
+   },
+   {
+    "type": "f32",
+    "name": "angle_offset (deg)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Horizontal move accumulator (obj+0x294, obj+0x298) += speed * (cos, sin)(yaw + angle_offset).",
+  "fields": [
+   "obj+0x294",
+   "obj+0x298",
+   "obj+0x4c"
+  ],
+  "helpers": [
+   "0x440288 sincos_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 202,
+  "mnemonic": "set_574304",
+  "operands": [
+   {
+    "type": "s8",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "Global 0x574304 = value (sign-extended byte).",
+  "fields": [],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 203,
+  "mnemonic": "camera_track",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "optional",
+    "name": "height",
+    "layout": "u8 mode; if mode==1: f32 factor"
+   }
+  ],
+  "flow": "next",
+  "summary": "Moves global 0x573918 (probably the player's camera pitch) towards this object when the player faces it; mode 0 uses obj+0x1ac, mode 1 obj.z + factor*obj+0x58, limited by player-arena+0x462. Sets 0x5739b0 = 1.",
+  "fields": [],
+  "helpers": [
+   "0x4612e0 camera_track_object"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 204,
+  "mnemonic": "avoid_objects",
+  "operands": [],
+  "flow": "next",
+  "summary": "If the object's box overlaps another active object, steers its yaw (obj+0x4c) away from it.",
+  "fields": [
+   "obj+0x4c"
+  ],
+  "helpers": [
+   "0x4611e4 avoid_objects"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 205,
+  "mnemonic": "set_21f",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x21f = value.",
+  "fields": [
+   "obj+0x21f"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 206,
+  "mnemonic": "spawn_along_path",
+  "operands": [
+   {
+    "type": "off32",
+    "name": "path (data: spline keys, not code)",
+    "role": "data"
+   },
+   {
+    "type": "f32",
+    "name": "step"
+   },
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawns one enemy of type type_name every 'step' time units along the spline at g_cmi+path (u32 count, then count 40-byte keys whose first s32 is the key time) from t=0 up to the last key's time, with consecutive instance numbers; each gets flags 0x2008A6.",
+  "fields": [
+   "new+0x148"
+  ],
+  "helpers": [
+   "0x45ca88 enemy_type_find",
+   "0x45cb04 enemy_max_instance",
+   "0x43c0f8 path_eval_spline",
+   "0x45cdec enemy_spawn"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 207,
+  "mnemonic": "turn_to_yaw",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "speed"
+   },
+   {
+    "type": "f32",
+    "name": "target_yaw"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Turns obj+0x4c towards target_yaw by speed*frame_time (0x460968) and normalizes it to [0,360); unless act == 0xFF performs the action when the yaw equals target_yaw (0xFE: else-gosub otherwise).",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x460968 turn_towards",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 208,
+  "mnemonic": "if_part_hit",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "part_name"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: the model part part_name exists and its bit is set in obj+0x2c8 (hit/destroyed parts mask); when true the action is performed and obj+0x21e is cleared.",
+  "fields": [
+   "obj+0x2c8",
+   "obj+0x21e",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45ee40 model_find_part",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 209,
+  "mnemonic": "if_player_on_me_low",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: the player stands on this object (0x573b84 == obj), 0x573a38 != 0 and the player's z <= 0x573a1c.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 210,
+  "mnemonic": "set_2c0",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "value",
+    "layout": "u8 kind; if kind==3: f32 literal; else u8 index (0..3, out of range -> 0) of a float variable (0x440944): kind 0 global 0x573b4c[i], 1 arena+0x48[i], 2 obj+0x234[i], other (>=4) partner (obj+0x2b8)+0x234[i]."
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x2c0 = value (float).",
+  "fields": [
+   "obj+0x2c0"
+  ],
+  "helpers": [
+   "0x440944 script_var_ref"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 211,
+  "mnemonic": "stop_velocity",
+  "operands": [],
+  "flow": "next",
+  "summary": "Clears obj+0x28, obj+0x2c, obj+0x30 (velocity).",
+  "fields": [
+   "obj+0x28",
+   "obj+0x2c",
+   "obj+0x30"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 212,
+  "mnemonic": "if_hit_fd",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: hit event obj+0x21e == 0xFD (-3, set by 0x45cf60, area/blast hit). When true, obj+0x21e is cleared after the action.",
+  "fields": [
+   "obj+0x21e"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 213,
+  "mnemonic": "if_partner_distance",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "compare",
+    "name": "compare",
+    "layout": "u8 op; f32 b; if op==7 or op==8: f32 c. Tested value a = distance to the partner obj+0x2b8 (0 without a partner, otherwise at least 1.0). op: 1 a<b, 2 a>b, 3 a<b+0.05, 4 a>b-0.05, 5 |a-b|<0.05, 6 |a-b|>=0.05, 7 b<=a<=c, 8 a<=b or a>=c, anything else = false (helper 0x45da90)."
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Branches on the distance to the partner object.",
+  "fields": [
+   "obj+0x2b8",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x417450 distance",
+   "0x45da90 script_compare",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 214,
+  "mnemonic": "if_partner_angle",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "compare",
+    "name": "compare",
+    "layout": "u8 op; f32 b; if op==7 or op==8: f32 c. Tested value a = yaw minus the atan2 angle towards the partner, normalized to (-180,180] (0 without a partner). op: 1 a<b, 2 a>b, 3 a<b+0.05, 4 a>b-0.05, 5 |a-b|<0.05, 6 |a-b|>=0.05, 7 b<=a<=c, 8 a<=b or a>=c, anything else = false (helper 0x45da90)."
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Branches on the relative angle to the partner object.",
+  "fields": [
+   "obj+0x2b8",
+   "obj+0x4c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440220 atan2_deg",
+   "0x45da90 script_compare",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 215,
+  "mnemonic": "screen_flash",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "value",
+    "name": "intensity",
+    "layout": "u8 kind; if kind==3: f32 literal; else u8 index (0..3, out of range -> 0) of a float variable (0x440944): kind 0 global 0x573b4c[i], 1 arena+0x48[i], 2 obj+0x234[i], other (>=4) partner (obj+0x2b8)+0x234[i]."
+   }
+  ],
+  "flow": "next",
+  "summary": "Screen flash: global 0x573b68 = max(0x573b68, round(intensity)) (it fades by 4 per tick).",
+  "fields": [],
+  "helpers": [
+   "0x440944 script_var_ref"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 216,
+  "mnemonic": "add_var_dt",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "src"
+   },
+   {
+    "type": "u8",
+    "name": "index"
+   },
+   {
+    "type": "f32",
+    "name": "rate"
+   }
+  ],
+  "flow": "next",
+  "summary": "Variable src/index += rate * frame time (0x491e24).",
+  "fields": [
+   "obj+0x234"
+  ],
+  "helpers": [
+   "0x440944 var_ptr"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 217,
+  "mnemonic": "global_573c4c_add",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mode"
+   },
+   {
+    "type": "s32",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "If mode == 1: global 0x573c4c += value; other modes do nothing.",
+  "fields": [],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 218,
+  "mnemonic": "set_f13c",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "v"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+0x13c = v (smoothed pitch/bank value used when turning along a path).",
+  "fields": [
+   "obj+0x13c"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 219,
+  "mnemonic": "if_check_461024",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "a"
+   },
+   {
+    "type": "f32",
+    "name": "b"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: helper 0x461024(obj, a, b) (uses the player's velocity, random numbers and other objects near y=a/z=b; exact meaning unclear).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x461024 ?",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 220,
+  "mnemonic": "place_x_near_player",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x_min"
+   },
+   {
+    "type": "f32",
+    "name": "x_max"
+   },
+   {
+    "type": "f32",
+    "name": "y_limit"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets obj.x (obj+0x10) to a random or player-predicted x in [x_min, x_max] (uses the player's x and speed when he is inside the range), avoiding other objects on the same y.",
+  "fields": [
+   "obj+0x10"
+  ],
+  "helpers": [
+   "0x460f00 place_x",
+   "0x402b24 random"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 221,
+  "mnemonic": "pick_waypoint8",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mode (1 = only the group of the nearest type-8 point)"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Pick a random weighted type-8 waypoint (mode 0: 50..500 units away (2D); mode 1: ids within +-3 of the nearest type-8 point); on success it becomes the destination with obj+0x11e = 221, else obj+0x11e = 0. If obj+0x11e == 221, perform the action.",
+  "fields": [
+   "obj+0x11e",
+   "obj+0x120",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x460a6c pick_waypoint8",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 222,
+  "mnemonic": "if_opcode_count",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "compare",
+    "name": "compare",
+    "layout": "u8 op; f32 b; if op==7 or op==8: f32 c. Tested value a = the number of opcodes executed so far in this script_run call (local [ebp-0x74]). op: 1 a<b, 2 a>b, 3 a<b+0.05, 4 a>b-0.05, 5 |a-b|<0.05, 6 |a-b|>=0.05, 7 b<=a<=c, 8 a<=b or a>=c, anything else = false (helper 0x45da90)."
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Branches on the per-call opcode counter (the one that raises 'Alien %s looped' above 1000).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 script_compare",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 223,
+  "mnemonic": "arena_set_neighbour",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "arena_name"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets the secondary (neighbour) arena 0x573a68 to arena_name and starts loading it (NONE or same = no change).",
+  "fields": [],
+  "helpers": [
+   "0x41a2d0 arena_set_neighbour",
+   "0x41a244 arena_find_by_name",
+   "0x419d00 arena_load_begin"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 224,
+  "mnemonic": "wind_zone",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "optional",
+    "name": "params",
+    "layout": "u8 enable; if enable != 0: f32 yaw, f32 speed"
+   }
+  ],
+  "flow": "next",
+  "summary": "enable: if the player is inside a type-9 hotspot box of the current arena, sets 0x573bec = 1 and, if 0x573be8 or 0x573c14 is set, turns the player to yaw and pushes him at speed (0x468be0), else lowers his vertical speed 0x573a3c. enable == 0 clears 0x573be8 and 0x573a80.",
+  "fields": [],
+  "helpers": [
+   "0x440288 sincos_deg",
+   "0x468b64 ?",
+   "0x468be0 damp_push?"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 225,
+  "mnemonic": "if_kurt_on_floor",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If Kurt currently stands on a floor polygon (0x573c10 != NULL), perform the action.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 226,
+  "mnemonic": "jump_to",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   },
+   {
+    "type": "f32",
+    "name": "p0"
+   },
+   {
+    "type": "f32",
+    "name": "p1"
+   }
+  ],
+  "flow": "next",
+  "summary": "Sets up a jump/ballistic move: obj+0x1c..0x24 = (x,y,z), obj+0x302 = p0, obj+0x30a = p1, obj+0x30e = current yaw, obj+0x306 = z - obj.z, and sets bit 0x40 of obj+0x14a.",
+  "fields": [
+   "obj+0x1c",
+   "obj+0x20",
+   "obj+0x24",
+   "obj+0x302",
+   "obj+0x306",
+   "obj+0x30a",
+   "obj+0x30e",
+   "obj+0x14a"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 227,
+  "mnemonic": "partner_flank",
+  "operands": [
+   {
+    "type": "off32",
+    "name": "target_close",
+    "role": "code"
+   },
+   {
+    "type": "off32",
+    "name": "target_flank",
+    "role": "code"
+   }
+  ],
+  "flow": "branch (goto target_close / goto target_flank / next)",
+  "summary": "AI pair manoeuvre: without a partner continues. Computes the angle between this object and its partner as seen from the player; > 120 degrees: continues; < 45 and the object sees the player (0x4605d0), has floor at -42 and no wall ahead: goto target_close; otherwise sets a move target 20 units away at +-60 degrees (obj+0x120..0x128, movement command obj+0x11e = '+') and goto target_flank. Offsets are not null-checked.",
+  "fields": [
+   "obj+0x2b8",
+   "obj+0x120",
+   "obj+0x124",
+   "obj+0x128",
+   "obj+0x11e",
+   "obj+0xec",
+   "obj+0x2a0",
+   "obj+0x2a4",
+   "obj+0x14c",
+   "obj+0x108",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440220 atan2_deg",
+   "0x4605d0 can_see_player",
+   "0x46046c probe_floor",
+   "0x4603d4 probe_wall",
+   "0x45a1dc move_start"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 228,
+  "mnemonic": "link_partners",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "pstr_or_flag",
+    "name": "type_name",
+    "layout": "u8 L; if L==0: u8 flag (flag==0 clears obj+0x2b8); else L bytes of name (i.e. a pstr)."
+   }
+  ],
+  "flow": "next",
+  "summary": "With a name: pairs up active objects of that name in the arena that have no partner (obj+0x2b8) and are closer than 100 units (squared distance < 10000), linking each pair mutually. With L==0 and flag 0: clears this object's partner pointer.",
+  "fields": [
+   "obj+0x2b8",
+   "arena+0x68"
+  ],
+  "helpers": [
+   "0x417480 dist_sq"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 229,
+  "mnemonic": "turn_and_jump_to_dest",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "turn_rate (deg/s)"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Turn the yaw toward the destination obj+0x120 by at most turn_rate*dt; once facing it start a ballistic jump (obj+0x11e = 229, velocity obj+0x28..0x30 from obj+0x44/obj+0x48, flight time in obj+0x302). If obj+0x11e == 229, perform the action.",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x120",
+   "obj+0x11e",
+   "obj+0x28",
+   "obj+0x302",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x460d24 jump_to_dest",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 230,
+  "mnemonic": "spawn_ex",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x"
+   },
+   {
+    "type": "f32",
+    "name": "y"
+   },
+   {
+    "type": "f32",
+    "name": "z"
+   },
+   {
+    "type": "f32",
+    "name": "yaw"
+   },
+   {
+    "type": "s32",
+    "name": "instance (<0 = next free)"
+   },
+   {
+    "type": "pstr",
+    "name": "type_name"
+   },
+   {
+    "type": "off32",
+    "name": "script (0 = none)",
+    "role": "code"
+   }
+  ],
+  "flow": "next",
+  "summary": "Spawns an enemy of type type_name at absolute (x,y,z) with the given instance number (next free one if negative) and sets its yaw (new+0x4c).",
+  "fields": [
+   "new+0x4c"
+  ],
+  "helpers": [
+   "0x45ca88 enemy_type_find",
+   "0x45cb04 enemy_max_instance",
+   "0x45cdec enemy_spawn"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 231,
+  "mnemonic": "if_move_idle_flag",
+  "operands": [
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: obj+0x11e == 0 (no movement command running) and byte obj+0x2a0 != 0 (movement result flag set by the movement code; opcode 43 clears it).",
+  "fields": [
+   "obj+0x11e",
+   "obj+0x2a0"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 232,
+  "mnemonic": "if_option",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "value"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: global 0x5742dc == value (a 0/1 option toggled by cheat codes, default 1; also picks BHOLE vs BHOLE2).",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 233,
+  "mnemonic": "if_sound_playing",
+  "operands": [
+   {
+    "type": "pstr",
+    "name": "sound"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: the named sound (looked up in the sound list 0x4d2e20) currently has a playing voice.",
+  "fields": [],
+  "helpers": [
+   "0x403c38 sound_find",
+   "0x402d98 sound_is_playing"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 234,
+  "mnemonic": "if_target_angle_signed",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Own yaw minus the direction to the target point, normalized to (-180,180]; if it passes the condition, perform the action.",
+  "fields": [
+   "obj+0x4c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440220 atan2_deg",
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 235,
+  "mnemonic": "turn_to_target_offset",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "turn_rate (deg/s)"
+   },
+   {
+    "type": "f32",
+    "name": "accuracy (100 = exact)"
+   },
+   {
+    "type": "f32",
+    "name": "offset_a"
+   },
+   {
+    "type": "f32",
+    "name": "offset_b"
+   }
+  ],
+  "flow": "next",
+  "summary": "P = target - (a*cos(ty) + b*sin(ty), b*cos(ty) + a*sin(ty)), ty = target yaw 0x57fc30; the angle to P gets a random error (rand(20)-10)*(100-accuracy)/(1+dist2d) unless accuracy == 100; turn the yaw toward it by at most turn_rate*dt.",
+  "fields": [
+   "obj+0x4c"
+  ],
+  "helpers": [
+   "0x440288 sincos_deg",
+   "0x440220 atan2_deg",
+   "0x460968 turn_towards",
+   "0x402b24 rand_n"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 236,
+  "mnemonic": "if_no_floor_at",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "dx"
+   },
+   {
+    "type": "f32",
+    "name": "dy"
+   },
+   {
+    "type": "f32",
+    "name": "depth"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: no floor below the object-local point (dx,dy) (rotated by yaw) within depth (a default depth if 0).",
+  "fields": [
+   "obj+0x10",
+   "obj+0x4c",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x46046c probe_floor",
+   "0x421708 bsp_segment_hit2",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 237,
+  "mnemonic": "if_self_in_box",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "x_min"
+   },
+   {
+    "type": "f32",
+    "name": "y_min"
+   },
+   {
+    "type": "f32",
+    "name": "z_min"
+   },
+   {
+    "type": "f32",
+    "name": "x_max"
+   },
+   {
+    "type": "f32",
+    "name": "y_max"
+   },
+   {
+    "type": "f32",
+    "name": "z_max"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If the own position obj+0x10 is inside the axis-aligned box, perform the action.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 238,
+  "mnemonic": "if_self_pos",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "axis (0=x, 1=y, other=z)"
+   },
+   {
+    "type": "complex",
+    "kind": "cond",
+    "name": "cond",
+    "layout": "u8 op; f32 a; if op==7 or op==8: f32 b (5 or 9 bytes). Test of the measured quantity x (helper 0x45da90): 1: x<a, 2: x>a, 3: x<a+0.05 (<=), 4: x>a-0.05 (>=), 5: |x-a|<0.05 (==), 6: |x-a|>=0.05 (!=), 7: a<=x<=b, 8: x<=a or x>=b; any other op: false"
+   },
+   {
+    "type": "complex",
+    "kind": "action",
+    "name": "action",
+    "layout": "u8 kind; kind 0xFE: off32 then, off32 else (9 bytes); kind 0xFC or 0x0C: off32 target (5 bytes; offset 0 = NULL); kind 0xFD: nothing (1 byte); any other kind: nothing (1 byte). Executed after all operands are read. Condition true: 0xFC = gosub target, 0xFE = gosub then, 0xFD = return, 0x0C = goto target (any other kind also takes the goto path with a stale target). Condition false: 0xFE = gosub else, all others do nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "If the own position component obj+0x10/0x14/0x18 passes the condition, perform the action.",
+  "fields": [
+   "obj+0x10",
+   "obj+0x14",
+   "obj+0x18",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 cond_test",
+   "0x440300 gosub_stack_error"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 239,
+  "mnemonic": "set_27c",
+  "operands": [
+   {
+    "type": "f32",
+    "name": "a0"
+   },
+   {
+    "type": "f32",
+    "name": "a1"
+   },
+   {
+    "type": "f32",
+    "name": "a2"
+   },
+   {
+    "type": "f32",
+    "name": "b0"
+   },
+   {
+    "type": "f32",
+    "name": "b1"
+   },
+   {
+    "type": "f32",
+    "name": "b2"
+   }
+  ],
+  "flow": "next",
+  "summary": "Stores six floats into obj+0x27c..obj+0x290 (probably two vectors; meaning unknown).",
+  "fields": [
+   "obj+0x27c",
+   "obj+0x280",
+   "obj+0x284",
+   "obj+0x288",
+   "obj+0x28c",
+   "obj+0x290"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 240,
+  "mnemonic": "set_hurt_flash",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "value"
+   }
+  ],
+  "flow": "next",
+  "summary": "Hurt flash 0x573b20 = value; the value 1 means 5 and is ignored while Kurt is invulnerable (0x573bd4 > 0).",
+  "fields": [],
+  "helpers": [],
+  "part": 2
+ },
+ {
+  "opcode": 241,
+  "mnemonic": "if_player_health",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "compare",
+    "name": "compare",
+    "layout": "u8 op; f32 b; if op==7 or op==8: f32 c. Tested value a = the player's health 0x574324 (s32). op: 1 a<b, 2 a>b, 3 a<b+0.05, 4 a>b-0.05, 5 |a-b|<0.05, 6 |a-b|>=0.05, 7 b<=a<=c, 8 a<=b or a>=c, anything else = false (helper 0x45da90)."
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Branches on the player's health.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x45da90 script_compare",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 242,
+  "mnemonic": "set_2d0_block",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "optional",
+    "name": "params",
+    "layout": "u8 enable; if enable != 0: 12 x f32"
+   }
+  ],
+  "flow": "next",
+  "summary": "enable != 0: obj+0x2d0 = 1, obj+0x2d1 = 0xFF and the 12 floats go to obj+0x2d2..obj+0x2fe; enable == 0: obj+0x2d1 = 0.",
+  "fields": [
+   "obj+0x2d0",
+   "obj+0x2d1",
+   "obj+0x2d2"
+  ],
+  "helpers": [],
+  "part": 3
+ },
+ {
+  "opcode": 243,
+  "mnemonic": "if_point_sees_player",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "point_index"
+   },
+   {
+    "type": "u16",
+    "name": "range"
+   },
+   {
+    "type": "complex",
+    "kind": "cond_action",
+    "name": "action",
+    "layout": "u8 act; if act==0xFE: off32 then_target, off32 else_target; elif act==0xFC or act==0x0C: off32 target (0 = null); else no more bytes. Condition true: 0xFC/0xFE = gosub target (pushes the pc after the operands to obj+0x24c[depth] and obj+0x108 to obj+0x25c[depth], depth obj+0x248, max 4; obj+0x108 = pc = target), 0xFD = return (pops both), any other act (0x0C) = goto target (obj+0x108 = pc = target). Condition false: 0xFE = gosub else_target, others fall through. act values other than 0x0C/0xFC/0xFD/0xFE would goto an uninitialised target (opcode 207 uses 0xFF = no action)."
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: the player is within range of the object's point point_index (obj+0x1b0 + 12*index) and the line between them is not blocked.",
+  "fields": [
+   "obj+0x1b0",
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x460518 point_sees_player",
+   "0x440300 gosub_error"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 244,
+  "mnemonic": "set_global_573bd4",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "add"
+   },
+   {
+    "type": "f32",
+    "name": "v"
+   }
+  ],
+  "flow": "next",
+  "summary": "add==0: global float 0x573bd4 = v; otherwise 0x573bd4 += v.",
+  "fields": [
+   "0x573bd4"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 245,
+  "mnemonic": "find_object",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "find_object",
+    "name": "args",
+    "layout": "if the next byte is 0x00: that byte, u8 mode, pstr name; otherwise pstr name (mode 0)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Linked object obj+0x2b8 = an object of the own arena (not self) with that model name, or NULL: mode 0 a random one, 1 the nearest (3D), 2 the nearest within 200 that has obj+0x149 bit 4, is at most 9 units higher and is in line of sight.",
+  "fields": [
+   "obj+0x2b8"
+  ],
+  "helpers": [
+   "0x4614d0 find_object"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 246,
+  "mnemonic": "turn_to_linked",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "flags (bit 0 = turn to the linked object, bit 7 = also pitch)"
+   },
+   {
+    "type": "f32",
+    "name": "turn_rate (deg/s)"
+   }
+  ],
+  "flow": "next",
+  "summary": "Only when flags bit 0 is set and the linked object obj+0x2b8 exists: turn the yaw toward it by at most turn_rate*dt; with bit 7 also turn the pitch obj+0x13c toward atan2(dz + obj+0x5c, XY distance).",
+  "fields": [
+   "obj+0x2b8",
+   "obj+0x4c",
+   "obj+0x13c",
+   "obj+0x5c"
+  ],
+  "helpers": [
+   "0x440220 atan2_deg",
+   "0x460968 turn_towards"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 247,
+  "mnemonic": "hud_message",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "flags"
+   },
+   {
+    "type": "pstr",
+    "name": "name"
+   },
+   {
+    "type": "f32",
+    "name": "time"
+   }
+  ],
+  "flow": "next",
+  "summary": "Queues the resource name (looked up by 0x415620) in the 4-entry display queue at 0x57ecf0 with flags and time (flags & 2 = insert at the front); most likely an on-screen message/picture.",
+  "fields": [],
+  "helpers": [
+   "0x425400 hud_queue_message",
+   "0x415620 resource_find"
+  ],
+  "part": 3
+ },
+ {
+  "opcode": 248,
+  "mnemonic": "push_kurt",
+  "operands": [
+   {
+    "type": "complex",
+    "kind": "mode248",
+    "name": "args",
+    "layout": "u8 mode; f32 a; if mode==0: f32 b, f32 up; else: f32 up"
+   }
+  ],
+  "flow": "next",
+  "summary": "Knock Kurt back (sniper mode is left first): unless 0x573a80 >= 9 or Kurt's state == 800, set his state to 901 and 0x573a80 = 9, add a horizontal push to 0x573c08/0x573c0c (mode 0: (-a*cos(yaw) - b*sin(yaw), -b*cos(yaw) - a*sin(yaw)) * dt; other modes: a * dt along the direction self->Kurt) and add up to his vertical speed 0x573a3c.",
+  "fields": [],
+  "helpers": [
+   "0x4645c8 exit_sniper_mode",
+   "0x46c3e4",
+   "0x440288 sincos_deg"
+  ],
+  "part": 2
+ },
+ {
+  "opcode": 249,
+  "mnemonic": "if_own_sound",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mode"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   },
+   {
+    "type": "complex",
+    "name": "sound",
+    "layout": "if mode==1: pstr sound name (read AFTER the action targets); otherwise nothing"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition on the tracked sound voice obj+0x158 (set by opcode 89 flag 4): mode 0: obj+0x158 != 0; mode 1: obj+0x158 != 0 and its name obj+0x15c equals the sound name; other modes: obj+0x158 == 0.",
+  "fields": [
+   "obj+0x158",
+   "obj+0x15c"
+  ],
+  "helpers": [
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 250,
+  "mnemonic": "if_in_box",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mask"
+   },
+   {
+    "type": "complex",
+    "name": "type_name",
+    "layout": "if mask==0xFF: pstr object type name; otherwise nothing"
+   },
+   {
+    "type": "u8",
+    "name": "mode"
+   },
+   {
+    "type": "complex",
+    "name": "box",
+    "layout": "if mode==2: f32 xmin, f32 ymin, f32 xmax, f32 ymax; any other mode: f32 xmin, f32 ymin, f32 zmin, f32 xmax, f32 ymax, f32 zmax"
+   },
+   {
+    "type": "complex",
+    "name": "action",
+    "layout": "branch action: u8 A, then A==0xFE: off32 then_target, off32 else_target; A==0xFC or A==0x0C: off32 target (offset 0 = null); A==0xFD: nothing; any other A: nothing. Executed after all operands of the opcode have been read: if the condition is true, A==0x0C goto target, A==0xFC or 0xFE gosub (then_)target, A==0xFD return; if false and A==0xFE gosub else_target; otherwise continue"
+   }
+  ],
+  "flow": "branch",
+  "summary": "Condition: mask==0xFF: some active object of that type in the arena is inside the box; otherwise one of the 3 player projectile slots (0x573c98, 0xfc bytes each) with type t (slot+0xd0, 1..4) and mask bit 1<<(t-1) is inside the box (slot position +0x20). Tests xmin<=x<=xmax and ymin<=y<=ymax, plus zmin<=z<=zmax only when mode==3 (order confirmed by LEVEL4/LEVEL7 data; the 8 boxes in LEVEL7 DANT_6 have an empty z range and never pass).",
+  "fields": [
+   "obj+0x60"
+  ],
+  "helpers": [
+   "0x43a040 str_equal_nocase"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 251,
+  "mnemonic": "set_target_mode",
+  "operands": [
+   {
+    "type": "u8",
+    "name": "mode"
+   }
+  ],
+  "flow": "next",
+  "summary": "obj+7 = mode: 1 = this object is the global alien target (0x491e48); 2 = this object always targets Kurt (target position 0x57fc34 = Kurt's position/yaw now). mode 0 releases 0x491e48 if it was this object.",
+  "fields": [
+   "obj+0x7",
+   "0x491e48",
+   "0x57fc34"
+  ],
+  "helpers": [],
+  "part": 1
+ },
+ {
+  "opcode": 252,
+  "mnemonic": "gosub",
+  "operands": [
+   {
+    "type": "repeat",
+    "count": "u8",
+    "items": [
+     {
+      "type": "off32",
+      "name": "target"
+     }
+    ]
+   }
+  ],
+  "flow": "gosub",
+  "summary": "Gosub to one of N targets chosen at random: pushes (pc after the operands, obj+0x108) on the 4-deep stack obj+0x24c/obj+0x25c, depth obj+0x248++, then obj+0x108 = pc = target, obj+0x26c[depth] = 0. Overflow (depth>=4): debug log, obj+0x108 = 0, return.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c",
+   "obj+0x26c"
+  ],
+  "helpers": [
+   "0x402b24 rand_below",
+   "0x440300 gosub_stack_error (debug log only)"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 253,
+  "mnemonic": "return",
+  "operands": [],
+  "flow": "return",
+  "summary": "Return from gosub: depth--, pc = obj+0x24c[depth], obj+0x108 = obj+0x25c[depth]. Underflow (depth 0): debug log, obj+0x108 = 0, return.",
+  "fields": [
+   "obj+0x108",
+   "obj+0x248",
+   "obj+0x24c",
+   "obj+0x25c"
+  ],
+  "helpers": [
+   "0x440300 gosub_stack_error (debug log only)"
+  ],
+  "part": 1
+ },
+ {
+  "opcode": 255,
+  "mnemonic": "end_frame",
+  "operands": [],
+  "flow": "end",
+  "summary": "Handled by the interpreter loop (0x440ce3): clears the hit event obj+0x21e and returns; obj+0x108 is unchanged so the next frame restarts at the last restart point.",
+  "fields": [
+   "obj+0x21e"
+  ],
+  "helpers": [],
+  "note": "not in the jump table; interpreter loop",
+  "part": 1
+ }
+]

@@ -51,6 +51,15 @@ static func parse(p_name: String, bytes: PackedByteArray, offset: int) -> MDKAre
 	return arena
 
 
+## Parses a world section on its own (corridors in `LEVELnO.SNI` have no textures, palette or models).
+static func parse_world(p_name: String, bytes: PackedByteArray, offset: int) -> MDKArena:
+	var arena := MDKArena.new()
+	arena.name = p_name
+	arena.textures = MDKTextureArchive.new()
+	arena._parse_world(bytes, offset)
+	return arena
+
+
 ## Parses the models section. `base` is right after its size.
 func _parse_models(bytes: PackedByteArray, base: int) -> void:
 	var r := BinReader.new(bytes, base)
