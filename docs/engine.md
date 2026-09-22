@@ -153,9 +153,20 @@ one times its scale, and every frame (0x4602c8) it's turned by `distance moved /
 turns (`obj+0x326`, 1 if ≤ 0) about the horizontal axis across the motion (built from two angles,
 0x46e170). The boulders of levels 4, 6 and 8 (`XCBOMB`, `XBO`).
 
-Walking and flying (43, 78, 197) go through a **waypoint** (`obj+0x12c`): `move_to` and
-`move_near_target` plan a detour around walls (`plan_move` 0x45a1dc) and the object heads for the
+Walking and flying (43, 78, 197) go through a **waypoint** (`obj+0x12c`): the object heads for the
 waypoint, then the destination (`obj+0x120`).
+
+- **`plan_move`** (0x45a1dc) runs only when `move_to` (78), `move_near_target` (43), `move_to_bomb`
+  (167), `partner_flank` (227) or `command_objects` 43 (only in Kurt's arena) start a move; the
+  find/pick opcodes (46, 197, 221) and formations go straight. There's no waypoint graph: if the
+  line from the object to the destination, both 8 units up, hits the arena (a ray against the own
+  arena's BSP, 0x421680; no objects), it tries `C = middle + t × s × length × (sin a, cos a)` for
+  `t` = 0.1…1.1 and `s` = −1, +1 (a = the heading to the destination) and takes the first `C` seen
+  from both ends (else the destination). The offset `(sin a, cos a)` is a bug: it's only sideways
+  when the line runs along an axis (along the line at 45°).
+- **Replanning when stuck** (0x45a434): an object heading for a detour drops it; one heading for the
+  destination tries the same kind of points around `0.75 B + 0.25 A` then around itself, with
+  `t` = 0.1, 0.4 … 1.9.
 
 - **Speed**: `obj+0x34` accelerates by `obj+0x3c × dt` (default 10) or slows down by `obj+0x40 × dt`
   (default 15) towards the max speed `obj+0x38` (default 50 units/s), halved while the waypoint is
@@ -168,10 +179,19 @@ waypoint, then the destination (`obj+0x120`).
   proportion to the horizontal and vertical distances; the waypoint is reached within 4 units
   horizontally and 3 vertically. With flag 0x10000 the object doesn't turn and moves straight
   (reached within 1 unit, Manhattan).
-- **Stuck detection**: the distance moved is summed over 16 ticks (9 for command 197); if it's less
-  than `speed × 0.5`, the object is stuck (`obj+0x14c` bit 3). When a stuck object also didn't turn
-  (less than 3°), it replans a detour (0x45a434, up to 3 times), then gives up: command 78 moves
-  straight by `speed × dt` per axis, the others stop.
+- **Stuck detection**: walking with command 43, any collision makes the object stuck (`obj+0x14c`
+  bit 3). Otherwise, while it collides and is faster than 2, the distance moved is summed over 16
+  ticks (9 walking with command 197, `obj+0x2a1`, `obj+0x2a4`); if it's less than `speed × 0.5`,
+  it's stuck; without a collision the counters reset. When a stuck object also didn't turn (less
+  than 3° this frame), `obj+0x2a0` goes up: command 197 stops, the first time it replans (0x45a434,
+  and the counter goes up again, so only once), then command 78 moves straight at the waypoint by
+  `speed × dt` per axis through everything and the others stop (`if_move_idle_flag` 231 sees
+  `obj+0x2a0`). The stuck bit is only cleared by a new move, so after a sidestep the object goes back
+  to the destination as soon as it stops turning.
+- **Banking** (0x43b65c): without flags 0x80 (`set_banking` 0) and 0x1, `roll = (roll − r) × 0.95`
+  within ±10° with `r` the turn per tick (at most ±2°). With flag 0x1 the roll rocks between −10°
+  and +10° by 2° a call ❓ (not in the port). While a spline path runs with flag 0x200 the pitch
+  follows the climb: `0.2 × atan2(dz, horizontal) + 0.8 × pitch`.
 - **Chasing** (command 6, 0x45e448): speed in units per *tick*: while facing the target within
   22.5° it grows by `(22.5 − angle) × ticks / 6 × 0.0444` up to 2.333, otherwise it drops by
   `0.05 × ticks` down to 0.333; turning at 180°/s (not when the target is behind and within 30
@@ -642,7 +662,7 @@ level 5's Gunter.
 (set in 0x462708 before the group hit script runs, never cleared). The opcode makes it follow a
 spline path (update 0x4634ac: absolute positions, life 99 until the last key, then 0 so it goes
 off, no collisions; the round's camera stays on Kurt's side). Level 7's `DANT_6` guides rounds that
-hit four wall groups down chutes onto four grunts. Not in the port yet: it needs sniper mode.
+hit four wall groups down chutes onto four grunts. The port guides its mortar rounds the same way (`MDKSniperRounds`).
 
 ## Bullet holes (`special_130` 130, 0x45d140)
 

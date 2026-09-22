@@ -368,7 +368,7 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			obj.pitch = o[0]
 		122:  # turn_pitch
 			obj.pitch += clampf(wrapf(o[1] - obj.pitch, -180.0, 180.0), -o[0] * dt, o[0] * dt)
-		97:  # set_banking (the automatic banking isn't implemented)
+		97:  # set_banking (automatic banking, `MDKObjectMotion._bank`)
 			if o[0] != 0:
 				obj.flags &= ~MDKObject.FLAG_NO_BANKING
 			else:
@@ -661,6 +661,9 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			var track: Array = o[0]
 			runtime.camera_track(obj, track[0], track[1] if track.size() > 1 else 0.0)
 
+		28:  # bomb_follow_path: the sniper mortar round that just hit a triangle group follows a path
+			runtime.sniper_rounds.guide_last_mortar(o[0])
+
 		229:  # turn_and_jump_to_dest: [turn rate, action while jumping]
 			runtime.motion.turn_and_jump(obj, o[0])
 			return _branch(obj, ins, obj.move_command == 229)
@@ -746,7 +749,7 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			return _branch(obj, ins, obj.arena != runtime.current_arena)
 		222:  # if_opcode_count
 			return _branch(obj, ins, _compare(_opcode_count, o[0]))
-		231:  # if_move_idle_flag (the movement code's stuck detection isn't implemented)
+		231:  # if_move_idle_flag: the movement gave up (stuck, `MDKObjectMotion._handle_stuck`)
 			return _branch(obj, ins, obj.move_command == 0 and obj.stuck_count != 0)
 		236:  # if_no_floor_at: no floor below a point in front of the object
 			var offset := Vector2(o[0], o[1]).rotated(deg_to_rad(obj.yaw))
@@ -1161,10 +1164,8 @@ func _point(obj: MDKObject, operand: Array) -> Vector3:
 func _start_move(obj: MDKObject, command: int, destination: Vector3) -> void:
 	obj.move_command = command
 	obj.move_destination = destination
-	# The original plans a detour waypoint around walls (0x45a1dc); objects go straight for now.
-	obj.waypoint = destination
 	obj.path = 0
-	obj.contact_flags &= ~MDKObject.CONTACT_STUCK
+	runtime.motion.plan_move(obj)
 
 
 ## `follow_path`: operands `[path, flags1, flags2, start frame, relative, origin]`.

@@ -55,6 +55,9 @@ var motion: MDKObjectMotion
 ## Sprite effects (wounds, drops, bubbles) and shattered triangle groups.
 var effects: MDKEffects
 var debris: MDKDebris
+## Sniper rounds, and the object locked in the scope (`0x573a8c`: homing target and zoom limit).
+var sniper_rounds: MDKSniperRounds
+var sniper_target: MDKObject
 ## The point and direction of the last `shatter_group` (0x4d5374, 0x4d5358).
 var shatter_point := Vector3()
 var shatter_direction := Vector3(0.0, 0.0, 1.0)
@@ -152,6 +155,13 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	debris = MDKDebris.new()
 	debris.level = level
 	add_child(debris)
+	sniper_rounds = MDKSniperRounds.new()
+	sniper_rounds.runtime = self
+	add_child(sniper_rounds)
+	kurt.sniper_fire = func(type: int) -> bool:
+		if type > 4:
+			return false
+		return sniper_rounds.fire(type, to_mdk(kurt.get_sniper_eye()), kurt_yaw, kurt.sniper_pitch, sniper_target)
 	kurt.updraft = func(vz: float, dt: float) -> float:
 		return fans.query(current_arena, to_mdk(kurt.global_position), vz, MDKFans.MASK_KURT, dt)
 	kurt.item_used.connect(items.use_item)
@@ -286,6 +296,8 @@ func _tick() -> void:
 	items.update_twisters()
 	effects.update(1.0)
 	debris.update(1.0)
+	sniper_rounds.update(1.0)
+	_update_sniper_target()
 	# Only the objects of Kurt's arena are updated (0x43c7dc; the original also updates the arena
 	# seen through an open door).
 	for obj in objects.duplicate():
@@ -424,6 +436,42 @@ func camera_track(obj: MDKObject, mode: int, height: float) -> void:
 		target = clampf(-rad_to_deg(atan2(top - kurt_position.z, distance)) * (120.0 - off) / 120.0, -30.0, rest)
 	camera_track_pitch = target
 	camera_track_ticks = 2
+
+
+## The scope's target lock (during projection in the original, 0x43b65c): the nearest object whose
+## screen box overlaps a 64-pixel square around the crosshair (in 640×480 pixels), not flagged 0x30.
+## It's what homing rounds chase, and zooming in on it is allowed down to `0.375 × its height /
+## distance` (0x4678b0) instead of 0.25.
+func _update_sniper_target() -> void:
+	sniper_target = null
+	kurt.zoom_limit = Kurt.ZOOM_MIN
+	var camera := get_viewport().get_camera_3d()
+	if not kurt.sniping or not camera:
+		return
+	var screen := get_viewport().get_visible_rect().size
+	var scale := screen.y / SniperOverlay.SCREEN.y
+	var center := Vector2((screen.x - SniperOverlay.SCREEN.x * scale) / 2.0, 0.0) 			+ (SniperOverlay.VIEW_ORIGIN + SniperOverlay.CROSSHAIR) * scale
+	var square := Rect2(center - Vector2(32.0, 32.0) * scale, Vector2(64.0, 64.0) * scale)
+	var best_depth := INF
+	for obj in objects:
+		if obj.dead or obj.arena != current_arena or not obj.model or obj.flags & (MDKObject.FLAG_NOT_SOLID | MDKObject.FLAG_NOT_TARGET):
+			continue
+		var bounds := get_world_bounds(obj)
+		var center_point := MDKMeshBuilder.to_godot(bounds.get_center())
+		if camera.is_position_behind(center_point):
+			continue
+		var rect := Rect2(camera.unproject_position(center_point), Vector2.ZERO)
+		for i in 8:
+			var corner := MDKMeshBuilder.to_godot(bounds.get_endpoint(i))
+			if not camera.is_position_behind(corner):
+				rect = rect.expand(camera.unproject_position(corner))
+		var depth := camera.global_position.distance_to(center_point)
+		if rect.intersects(square) and depth < best_depth:
+			best_depth = depth
+			sniper_target = obj
+	if sniper_target:
+		var bounds := get_world_bounds(sniper_target)
+		kurt.zoom_limit = minf(Kurt.ZOOM_MIN, 0.375 * maxf(bounds.size.z, 10.0) / maxf(kurt_position.distance_to(bounds.get_center()), 1.0))
 
 
 ## The first active object of a type (the cutscenes' targets).
@@ -565,7 +613,7 @@ func _spawn_dti_aliens(arena_name: String) -> void:
 
 ## Spawns an object of type `type_name` in `parent`'s arena. Returns `null` if the type is unknown.
 func spawn(parent: MDKObject, type_name: String, mdk_position: Vector3, yaw: float, instance: int, script: int, flagged: bool) -> MDKObject:
-	var model := _find_model(parent.arena, type_name)
+	var model := find_model(parent.arena, type_name)
 	if not model:
 		return null
 	var obj := MDKObject.new()
@@ -1364,11 +1412,10 @@ func _command_object(sender: MDKObject, receiver: MDKObject, command: int, targe
 		43:
 			if receiver.arena == current_arena:
 				receiver.move_destination = destination
-				receiver.waypoint = destination
 				receiver.leader = sender
 				receiver.move_command = 43
 				receiver.path = 0
-				receiver.contact_flags &= ~MDKObject.CONTACT_STUCK
+				motion.plan_move(receiver)
 	return false
 
 
@@ -1415,7 +1462,7 @@ func find_arena_animation(arena_name: String, animation_name: String) -> MDKMode
 	return arena.animations.get(animation_name) if arena else null
 
 
-func _find_model(arena_name: String, type_name: String) -> MDKModel:
+func find_model(arena_name: String, type_name: String) -> MDKModel:
 	var model := level.cmi.get_model(type_name)
 	if model:
 		return model

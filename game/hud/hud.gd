@@ -29,6 +29,7 @@ var _last_inventory := ""
 var _blink := 0
 var _bar_fill := Color()
 var _bar_frame := Color()
+var _sniper := SniperOverlay.new()
 
 
 func setup(p_kurt: Kurt, sprites: MDKBni, palette: MDKPalette, fti: MDKFti) -> void:
@@ -43,6 +44,7 @@ func setup(p_kurt: Kurt, sprites: MDKBni, palette: MDKPalette, fti: MDKFti) -> v
 	var digits := sprites.get_image("SNIP_TXT")
 	_digits = _make_texture(digits, palette)
 	_digit_height = digits.height
+	_sniper.setup(sprites, palette)
 	var pickups := sprites.get_animation("PICKUPS")
 	for i in pickups.frame_count:
 		_icons.push_back(_make_texture(pickups.get_frame(i), palette))
@@ -103,6 +105,17 @@ func _draw() -> void:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 0, 0, kurt.hurt_flash / 255.0 * 0.4))
 	if kurt.white_flash > 0.0:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, minf(kurt.white_flash / 255.0, 1.0)))
+	if kurt.sniping:
+		# The sniper screen covers the whole 640×480 screen, centred.
+		var s1 := size.y / SniperOverlay.SCREEN.y
+		draw_set_transform(Vector2((size.x - SniperOverlay.SCREEN.x * s1) / 2.0, 0.0), 0.0, Vector2(s1, s1))
+		_sniper.draw(self, kurt)
+		# Health in the frame's panel, where the normal view draws `SC_STAT` in the 600×360 view.
+		var panel := SniperOverlay.VIEW_ORIGIN + Vector2(600 - (_panel.get_width() + 16), VIEW_HEIGHT - (_panel.get_height() + 10))
+		if kurt.health > 20 or _blink < 16:
+			_draw_number(kurt.health, panel + Vector2(_panel.get_width() >> 1, (_panel.get_height() - _digit_height) >> 1))
+		messages.draw(self, SniperOverlay.SCREEN.x)
+		return
 	var s := _scale()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
 	var view := size / s

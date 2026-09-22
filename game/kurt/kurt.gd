@@ -67,6 +67,34 @@ const SLIDE_PITCH := 15000.0 / 11025.0
 ## Seconds standing still before the idle animation plays.
 const IDLE_DELAY := 6.0
 
+# Sniper mode (`0x573a60`, controls 0x467384, see docs/gameplay.md "Sniper mode").
+## The eye is this high above Kurt's feet (`0x573b7c`).
+const SNIPER_EYE_HEIGHT := 4.0
+const SNIPER_PITCH_LIMIT := 50.0
+## Sidestepping only, at a quarter of the running speed.
+const SNIPER_STRAFE := 0.25
+## Looking around: degrees per second (per tick in the original: 0.4/0.6 per tick, at most 4/6),
+## scaled by the zoom × 0.416667.
+const SNIPER_LOOK_ACCELERATION := 0.4 * TICKS * TICKS
+const SNIPER_LOOK_ACCELERATION_TURBO := 0.6 * TICKS * TICKS
+const SNIPER_LOOK_SPEED := 4.0 * TICKS
+const SNIPER_LOOK_SPEED_TURBO := 6.0 * TICKS
+const SNIPER_LOOK_FRICTION_SLOW := 1.0667 * TICKS * TICKS
+const SNIPER_LOOK_FRICTION_FAST := 1.6 * TICKS * TICKS
+const SNIPER_LOOK_SCALE := 0.416667
+## Zoom (`0x57391c`, the inverse of the magnification): 1 when sniping starts, down to 0.25 (4×).
+const ZOOM_MIN := 0.25
+## The zoom speed grows by 0.01 per tick up to 0.15 while a zoom key is held and decays by 0.015.
+const ZOOM_ACCELERATION := 0.01
+const ZOOM_MAX_SPEED := 0.15
+const ZOOM_DECAY := 0.015
+## Falling this fast (or rising) ends sniper mode.
+const SNIPER_FALL_SPEED := -30.0
+## Rounds in the clip, and the clip timer (`0x5743eb`): it drops by 4 per second, a shot adds 1
+## (a quarter of a second between shots), an empty clip sets it to 3.
+const CLIP_SIZE := 3
+const CLIP_DECAY := 4.0
+
 enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD, THROW, KNOCKED,
 		SLIP, SLIDE, SLIDE_FAST, SLIDE_BRAKE }
 
@@ -160,6 +188,22 @@ var updraft: Callable
 ## Kurt slides on his back (`0x573be8`, state 807): the wind zones start it.
 ## Kurt stands still and ignores the controls (cutscenes).
 var frozen := false
+## Sniper mode: on, the view's pitch in degrees (positive looks down, `0x573918`), the zoom, the
+## rounds loaded and the clip timer.
+var sniping := false
+var sniper_pitch := 0.0
+var zoom := 1.0
+var zoom_limit := ZOOM_MIN
+var clip_rounds := 0
+var clip_time := 0.0
+## Fires a sniper round: `func(ammo_type: int) -> bool` (false when no slot is free).
+var sniper_fire: Callable
+var _look_speed := Vector2.ZERO
+var _mouse_look := Vector2.ZERO
+var _zoom_speed := 0.0
+var _shot_ticks := 0
+var _breath_player: AudioStreamPlayer
+var _zoom_player: AudioStreamPlayer
 var sliding := false
 ## Slide velocity in MDK coordinates (`0x573bf0`), its speed cap and the smoothed floor normal.
 var slide_velocity := Vector2.ZERO
@@ -211,6 +255,10 @@ func setup(p_sprites: MDKBni, palette: MDKPalette, p_get_sound: Callable) -> voi
 	add_child(_fan_player)
 	_slide_player = AudioStreamPlayer.new()
 	add_child(_slide_player)
+	_breath_player = AudioStreamPlayer.new()
+	add_child(_breath_player)
+	_zoom_player = AudioStreamPlayer.new()
+	add_child(_zoom_player)
 	sprite.setup(palette)
 	muzzle.setup(palette)
 	muzzle.visible = false
@@ -220,6 +268,7 @@ func setup(p_sprites: MDKBni, palette: MDKPalette, p_get_sound: Callable) -> voi
 
 ## Stops firing the chain gun.
 func stop_firing() -> void:
+	leave_sniper()
 	firing = false
 	_gun_player.stop()
 	muzzle.visible = false
@@ -260,7 +309,13 @@ func get_facing() -> Vector3:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_mouse_turn -= event.screen_relative.x * MOUSE_SENSITIVITY
+		var motion: Vector2 = event.screen_relative * MOUSE_SENSITIVITY * Settings.mouse_sensitivity
+		if Settings.invert_mouse:
+			motion.y = -motion.y
+		if sniping:
+			_mouse_look += motion * zoom
+		else:
+			_mouse_turn -= motion.x
 
 
 func _physics_process(delta: float) -> void:
@@ -269,6 +324,7 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		return
 	if state == State.DEAD:
+		leave_sniper()
 		_update_death(delta)
 		return
 	hurt_flash = maxf(hurt_flash - 4.0 * TICKS * delta, 0.0)
@@ -276,6 +332,14 @@ func _physics_process(delta: float) -> void:
 	_update_knock_damage(delta)
 	var turbo := Input.is_action_pressed(&"turbo")
 	var on_floor := is_on_floor()
+	if Input.is_action_just_pressed(&"sniper_mode"):
+		if sniping:
+			leave_sniper(true)
+		else:
+			_enter_sniper(on_floor)
+	if sniping:
+		_update_sniper(delta, turbo, on_floor)
+		return
 	if sliding:
 		_update_slide(delta, on_floor)
 		_update_inside_bodies()
@@ -341,9 +405,162 @@ func _update_knock_damage(delta: float) -> void:
 	knock_damage = maxf(knock_damage - KNOCKDOWN_DRAIN * delta, 0.0)
 
 
+## Enters sniper mode (`damp_move` 0x46883c): only standing on a floor, not knocked down, sliding
+## or throwing. Kurt stops firing and shows `SNIPERON` (state 803); his sprite isn't drawn.
+func _enter_sniper(on_floor: bool) -> void:
+	if not on_floor or sliding or health == 0 or state in [State.KNOCKED, State.DEAD, State.THROW]:
+		return
+	stop_firing()
+	sniping = true
+	forward_speed = 0.0
+	strafe_speed = 0.0
+	_look_speed = Vector2.ZERO
+	_mouse_look = Vector2.ZERO
+	_mouse_turn = 0.0
+	_zoom_speed = 0.0
+	sniper_pitch = 0.0
+	zoom = 1.0
+	clip_rounds = 0
+	clip_time = 0.0
+	_set_state(State.STILL)
+	sprite.visible = false
+	play_sound("SNIPERON")
+	_breath_player.stream = _looped(get_sound.call("BREATH"))
+	if _breath_player.stream:
+		_breath_player.play()
+
+
+## Leaves sniper mode (0x4645c8): on the sniper key (with `SNIPEROFF`), when Kurt falls, is
+## knocked down or dies, and in cutscenes.
+func leave_sniper(with_sound := false) -> void:
+	if not sniping:
+		return
+	sniping = false
+	sprite.visible = true
+	strafe_speed = 0.0
+	_breath_player.stop()
+	_zoom_player.stop()
+	if with_sound:
+		play_sound("SNIPEROFF")
+
+
+## The eye in sniper mode (Godot space): 4 units above the feet, and a little forward when looking
+## down (`5 × (1 − cos pitch)`, as the normal camera).
+func get_sniper_eye() -> Vector3:
+	var eye := get_global_transform_interpolated().origin + Vector3.UP * SNIPER_EYE_HEIGHT
+	if sniper_pitch > 0.0:
+		eye += get_facing() * 5.0 * (1.0 - cos(deg_to_rad(sniper_pitch)))
+	return eye
+
+
+## Sniper controls (0x467384): Kurt only sidesteps; the turn keys and the forward/back keys (or the
+## mouse) turn and tilt the view, slower the more it's zoomed in; the zoom keys zoom.
+func _update_sniper(delta: float, turbo: bool, on_floor: bool) -> void:
+	if not on_floor and (velocity.y < SNIPER_FALL_SPEED or velocity.y > 1.0):
+		leave_sniper()
+	var look := Vector2(Input.get_axis(&"turn_left", &"turn_right"), -Input.get_axis(&"move_back", &"move_forward"))
+	for axis in 2:
+		_look_speed[axis] = _look_accelerate(_look_speed[axis], look[axis], turbo, delta)
+	var scale := zoom * SNIPER_LOOK_SCALE * delta
+	yaw -= deg_to_rad(_look_speed.x * scale + _mouse_look.x)
+	sniper_pitch = clampf(sniper_pitch + _look_speed.y * scale + _mouse_look.y, -SNIPER_PITCH_LIMIT, SNIPER_PITCH_LIMIT)
+	_mouse_look = Vector2.ZERO
+	_update_zoom(delta)
+	if Input.is_action_just_pressed(&"item_next"):
+		select_ammo(1)
+	elif Input.is_action_just_pressed(&"item_prev"):
+		select_ammo(-1)
+	var strafe_input := Input.get_axis(&"strafe_left", &"strafe_right")
+	strafe_speed = _accelerate(strafe_speed, strafe_input, turbo, 1.0, 1.0, delta)
+	var max_strafe := (MAX_SPEED_TURBO if turbo else MAX_SPEED) * SNIPER_STRAFE
+	strafe_speed = clampf(strafe_speed, -max_strafe, max_strafe)
+	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
+	velocity.x = right.x * strafe_speed + push.x
+	velocity.z = right.z * strafe_speed + push.y
+	velocity.y = maxf(velocity.y - GRAVITY * delta, -MAX_FALL_SPEED) if not on_floor else 0.0
+	_update_inside_bodies()
+	move_and_slide()
+	_update_clip(delta)
+
+
+func _look_accelerate(speed: float, input: float, turbo: bool, delta: float) -> float:
+	if is_zero_approx(input):
+		var friction := SNIPER_LOOK_FRICTION_FAST if absf(speed) > SNIPER_LOOK_SPEED else SNIPER_LOOK_FRICTION_SLOW
+		return move_toward(speed, 0.0, friction * delta)
+	var max_speed := SNIPER_LOOK_SPEED_TURBO if turbo else SNIPER_LOOK_SPEED
+	if speed * input < 0.0:
+		speed = 0.0
+	return clampf(speed + input * (SNIPER_LOOK_ACCELERATION_TURBO if turbo else SNIPER_LOOK_ACCELERATION) * delta, -max_speed, max_speed)
+
+
+## The zoom (0x4687a4): zooming out multiplies it by `1 + v` each tick, zooming in divides it by
+## `1 + v`, between 1 and the limit (0.25, or less to see a far target better, 0x4678b0).
+func _update_zoom(delta: float) -> void:
+	var ticks := delta * TICKS
+	var direction := Input.get_axis(&"zoom_in", &"zoom_out")
+	if direction != 0.0:
+		_zoom_speed = clampf(_zoom_speed + direction * ZOOM_ACCELERATION * ticks, -ZOOM_MAX_SPEED, ZOOM_MAX_SPEED)
+	else:
+		_zoom_speed = move_toward(_zoom_speed, 0.0, ZOOM_DECAY * ticks)
+	if _zoom_speed > 0.0:
+		zoom = minf(zoom * pow(1.0 + _zoom_speed, ticks), 1.0)
+	elif _zoom_speed < 0.0:
+		zoom = maxf(zoom / pow(1.0 - _zoom_speed, ticks), zoom_limit)
+	var zooming := direction != 0.0 and (zoom < 1.0 or direction < 0.0) and (zoom > zoom_limit or direction > 0.0)
+	if zooming and not _zoom_player.playing:
+		_zoom_player.stream = _looped(get_sound.call("ZOOM"))
+		if _zoom_player.stream:
+			_zoom_player.play()
+	elif not zooming and _zoom_player.playing:
+		_zoom_player.stop()
+
+
+## The clip (0x41eb10) and firing (0x461e88): while the timer runs, rounds load one per tick up to
+## 3 (only as many as there's ammo for, except normal bullets; `SNIPRELD`); a shot needs the timer at
+## 0, 5 ticks since the last one and a free round slot.
+func _update_clip(delta: float) -> void:
+	_shot_ticks = mini(_shot_ticks + 1, 999)
+	var ammo_type := inventory.selected_ammo
+	var stock: int = 999 if ammo_type == 0 else inventory.ammo[ammo_type - 1]
+	if clip_time > 0.0 and clip_rounds < mini(CLIP_SIZE, stock):
+		clip_rounds += 1
+		play_sound("SNIPRELD")
+	if clip_rounds == 0 and clip_time <= 0.0:
+		if ammo_type != 0 and stock <= 0:
+			inventory.selected_ammo = 0
+		clip_time = 3.0
+	clip_time = maxf(clip_time - CLIP_DECAY * delta, 0.0)
+	if not Input.is_action_pressed(&"fire") or clip_time > 0.0 or _shot_ticks <= 4 or clip_rounds <= 0:
+		return
+	if sniper_fire.is_valid() and not sniper_fire.call(ammo_type):
+		return
+	_shot_ticks = 0
+	play_sound("SNIPERSHOT")
+	clip_rounds -= 1
+	if ammo_type != 0:
+		inventory.ammo[ammo_type - 1] -= 1
+	clip_time += 1.0
+	if clip_rounds == 0:
+		clip_time = 3.0
+
+
+## Picks the next or previous sniper ammo type that has rounds (0x46c900); the clip reloads.
+func select_ammo(step: int) -> void:
+	var ammo_type := inventory.selected_ammo
+	for i in 6:
+		ammo_type = wrapi(ammo_type + step, 0, 6)
+		if ammo_type == 0 or inventory.ammo[ammo_type - 1] > 0:
+			break
+	if ammo_type != inventory.selected_ammo:
+		inventory.selected_ammo = ammo_type
+		clip_rounds = 0
+		clip_time = 3.0
+
+
 ## Knocks Kurt down (state 901): he stops firing, falls and gets up (`K_BANG`, `K_BFLIP`), and is
 ## invulnerable for 3 seconds. After a slide he only gets up (`from_flip`).
 func knock_down(p_push := Vector2.ZERO, from_flip := false) -> void:
+	leave_sniper()
 	knock_damage = 0.0
 	invulnerable = KNOCKDOWN_INVULNERABILITY
 	push += p_push

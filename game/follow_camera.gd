@@ -23,6 +23,10 @@ const SHAKE_SCALE := 16384.0 * 0.0001
 const SHAKE_LIMIT := Vector2(19.0, 59.0)
 const SHAKE_DRAIN := 0.25
 const VIEW_HEIGHT := 360.0
+## Sniper mode: the scope's focal length at zoom 1 and its centre, in pixels of the 640×480 screen.
+const SNIPER_FOCAL := 384.0
+const SNIPER_CENTER := Vector2(319.0, 279.0)
+const SCREEN_HEIGHT := 480.0
 
 @export var target: Kurt
 @export var level: Level
@@ -40,7 +44,8 @@ var _shake_time := 0.0
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		look_offset += event.screen_relative.y * MOUSE_SENSITIVITY
+		if not target.sniping:
+			look_offset += event.screen_relative.y * MOUSE_SENSITIVITY * Settings.mouse_sensitivity * (-1.0 if Settings.invert_mouse else 1.0)
 
 
 ## Shakes the screen at least this much (`0x467f7c`, opcode 135).
@@ -49,6 +54,10 @@ func raise_shake(amount: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if target.sniping:
+		_update_sniper_view()
+		return
+	projection = PROJECTION_PERSPECTIVE
 	if scripts and scripts.cutscene:
 		global_transform = scripts.get_cutscene_camera()
 		return
@@ -92,6 +101,19 @@ func _process(delta: float) -> void:
 		var per_pixel := deg_to_rad(fov) / VIEW_HEIGHT
 		view = view * Basis.from_euler(Vector3(_shake_offset.y * per_pixel, -_shake_offset.x * per_pixel, 0.0))
 	global_transform = Transform3D(view, position)
+
+
+## Sniper mode: the view from Kurt's eye through the scope, whose focal length is 384 / zoom pixels of
+## the 640×480 screen (`0x57428c`: 384×280 at (127, 139), centred on (319, 279)); the screen is
+## 480 pixels high, so the frustum is shifted to put the centre of the scope on the line of sight.
+func _update_sniper_view() -> void:
+	var pitch := deg_to_rad(target.sniper_pitch)
+	var look := target.get_facing() * cos(pitch) - Vector3.UP * sin(pitch)
+	var focal := SNIPER_FOCAL / target.zoom
+	projection = PROJECTION_FRUSTUM
+	size = SCREEN_HEIGHT * near / focal
+	frustum_offset = Vector2(0.0, SNIPER_CENTER.y - SCREEN_HEIGHT / 2.0) * near / focal
+	global_transform = Transform3D(Basis.looking_at(look, Vector3.UP), target.get_sniper_eye())
 
 
 func _update_shake(delta: float) -> void:

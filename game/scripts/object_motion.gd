@@ -67,6 +67,7 @@ func update(obj: MDKObject) -> void:
 		obj.frame_sound = ""
 	if obj.flags & MDKObject.FLAG_ROLLING:
 		_roll(obj)
+	_bank(obj)
 	obj.previous_position = obj.mdk_position
 	obj.update_transform()
 	obj.update_body()
@@ -204,10 +205,15 @@ func _update_command(obj: MDKObject) -> void:
 			var target := runtime.target_position
 			_chase(obj, Vector3(target.x, target.y, target.z + 8.0))
 		43, 78, 197:
-			if obj.flags & MDKObject.FLAG_GRAVITY:
+			var yaw := obj.yaw
+			var walking := obj.flags & MDKObject.FLAG_GRAVITY != 0
+			if walking:
 				_walk(obj)
 			else:
 				_fly(obj)
+			if obj.move_command:
+				_detect_stuck(obj, walking)
+				_handle_stuck(obj, absf(wrapf(obj.yaw - yaw, -180.0, 180.0)))
 		61:
 			_fly_projectile(obj)
 		74:
@@ -324,6 +330,123 @@ func _swing(obj: MDKObject) -> void:
 	obj.rope_mask = 1
 	obj.rope_points[0] = obj.mdk_position
 	obj.rope_points[1] = obj.swing_pivot
+
+
+## `plan_move` (0x45a1dc), when a walk or flight starts (`move_to`, `move_near_target`,
+## `move_to_bomb`, `command_objects` 43): if the line from the object to the destination (both 8
+## units up) is blocked, tries detour points on either side of its middle, 0.1 to 1.1 times its
+## length away, and takes the first one seen from both ends. The original offsets them along
+## `(sin a, cos a)` for a heading `a`, which is only sideways when the line runs along an axis.
+func plan_move(obj: MDKObject) -> void:
+	obj.waypoint = obj.move_destination
+	obj.stuck_count = 0
+	obj.stuck_ticks = 0.0
+	obj.stuck_moved = Vector3.ZERO
+	obj.contact_flags &= ~MDKObject.CONTACT_STUCK
+	var a := obj.mdk_position + Vector3(0.0, 0.0, 8.0)
+	var b := obj.move_destination + Vector3(0.0, 0.0, 8.0)
+	if runtime.raycast(a, b).is_empty():
+		return
+	var middle := (a + b) * 0.5
+	for i in 11:
+		for side in [-1.0, 1.0]:
+			var point := _detour(a, b, middle, 0.1 * (i + 1) * side)
+			if _clear(a, point, b):
+				obj.waypoint = point
+				return
+
+
+## The stuck replan (0x45a434): an object heading to a detour gives it up and heads for the
+## destination again; one heading for the destination tries detours around the point 3/4 of the
+## way there, then around itself (0.1 to 1.9 times the distance, both sides).
+func _replan(obj: MDKObject) -> void:
+	if obj.waypoint != obj.move_destination:
+		obj.waypoint = obj.move_destination
+		obj.stuck_ticks = 0.0
+		obj.stuck_moved = Vector3.ZERO
+		obj.contact_flags &= ~MDKObject.CONTACT_STUCK
+		return
+	var a := obj.mdk_position + Vector3(0.0, 0.0, 8.0)
+	var b := obj.move_destination + Vector3(0.0, 0.0, 8.0)
+	for base in [b * 0.75 + a * 0.25, a]:
+		for i in 7:
+			for side in [-1.0, 1.0]:
+				var point := _detour(a, b, base, (0.1 + 0.3 * i) * side)
+				if _clear(a, point, b):
+					obj.waypoint = point
+					return
+
+
+func _detour(a: Vector3, b: Vector3, base: Vector3, amount: float) -> Vector3:
+	var angle := atan2(b.y - a.y, b.x - a.x)
+	return base + Vector3(sin(angle), cos(angle), 0.0) * amount * a.distance_to(b)
+
+
+func _clear(a: Vector3, point: Vector3, b: Vector3) -> bool:
+	return runtime.raycast(a, point).is_empty() and runtime.raycast(point, b).is_empty()
+
+
+## Stuck detection after walking or flying (0x45a7d4, 0x45ae74). Walking with command 43, any
+## collision counts as stuck. Otherwise an object that collides while faster than 2 is stuck when it
+## has moved less than half its speed over a window of 16 ticks (9 walking with command 197).
+func _detect_stuck(obj: MDKObject, walking: bool) -> void:
+	var collided := obj.contact_flags & MDKObject.CONTACT_COLLIDED != 0
+	if walking and obj.move_command == 43:
+		if collided:
+			obj.contact_flags |= MDKObject.CONTACT_STUCK
+			obj.stuck_ticks = 30.0
+		else:
+			obj.stuck_count = 0
+			obj.stuck_ticks = 0.0
+			obj.stuck_moved = Vector3.ZERO
+		return
+	if not collided or obj.speed <= 2.0:
+		obj.stuck_count = 0
+		obj.stuck_ticks = 0.0
+		obj.stuck_moved = Vector3.ZERO
+		return
+	var window := 9.0 if walking and obj.move_command == 197 else 16.0
+	if obj.stuck_ticks < window:
+		obj.stuck_moved += obj.mdk_position - obj.previous_position
+		obj.stuck_ticks += ticks
+		return
+	if absf(obj.stuck_moved.x) + absf(obj.stuck_moved.y) + absf(obj.stuck_moved.z) >= obj.speed * 0.5:
+		obj.stuck_ticks = 0.0
+		obj.stuck_moved = Vector3.ZERO
+	else:
+		obj.contact_flags |= MDKObject.CONTACT_STUCK
+
+
+## A stuck object that isn't turning (less than 3° this update, 0x45b6c8) replans once; after that
+## `move_to` (78) slides straight to the waypoint through everything and the others give up
+## (`if_move_idle_flag` sees `stuck_count`). Command 197 gives up at once.
+func _handle_stuck(obj: MDKObject, turned: float) -> void:
+	if not obj.contact_flags & MDKObject.CONTACT_STUCK or turned >= 3.0:
+		return
+	obj.stuck_count += 1
+	if obj.move_command == 197:
+		_stop(obj)
+	elif obj.stuck_count < 3:
+		_replan(obj)
+		obj.stuck_count += 1
+	elif obj.move_command == 78:
+		var to_waypoint := obj.waypoint - obj.mdk_position
+		var step := obj.speed * dt
+		obj.mdk_position += Vector3(clampf(to_waypoint.x, -step, step), clampf(to_waypoint.y, -step, step), clampf(to_waypoint.z, -step, step))
+	else:
+		obj.move_command = 0
+		obj.speed = 0.0
+
+
+## Automatic banking (0x43b65c): objects lean into their turns, `roll = (roll − turn per tick) ×
+## 0.95` within ±10° (the turn counted at most 2° per tick), unless flag 0x80 (`set_banking` 0) or
+## flag 1 is set.
+func _bank(obj: MDKObject) -> void:
+	var turn := clampf(wrapf(obj.yaw - obj.banking_yaw, -180.0, 180.0) / ticks, -2.0, 2.0)
+	obj.banking_yaw = obj.yaw
+	if obj.flags & (MDKObject.FLAG_NO_BANKING | 1) or obj.thrown_kind > 0 or obj.flags & MDKObject.FLAG_ROLLING:
+		return
+	obj.roll = clampf((wrapf(obj.roll, -180.0, 180.0) - turn) * 0.95, -10.0, 10.0)
 
 
 ## Turns the object towards a point by at most `TURN_SPEED` × dt. Returns the angle that was

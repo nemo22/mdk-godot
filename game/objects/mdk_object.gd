@@ -122,6 +122,11 @@ var move_parameter := 0
 var move_destination := Vector3()
 ## Frames the movement code found the object stuck (`obj+0x2a0`; not computed yet).
 var stuck_count := 0
+## Stuck detection (`obj+0x2a1`, `obj+0x2a4`): ticks and distance moved in the current window.
+var stuck_ticks := 0.0
+var stuck_moved := Vector3()
+## Yaw at the previous update, for the automatic banking (`obj+0x50`).
+var banking_yaw := 0.0
 ## Current waypoint (`obj+0x12c`, also the formation offset for command 1).
 var waypoint := Vector3()
 ## Reference points `a` (own) and `b` (of the leader) of an attachment (`attach_to`).
@@ -170,6 +175,10 @@ var thrown_kind := 0
 var item_ticks := 0
 ## Blasts farther than this don't hurt the object (`obj+0x2c4`, opcode 177).
 var blast_range := 1000.0
+## The part + 1 and the point of the last sniper round hit (`obj+0x21c`, `obj+0x210`), for bullet
+## holes (`special_130`).
+var shot_part := 0
+var shot_point := Vector3()
 ## Bleeding wounds by reference point (`obj+0x160`, `MDKEffects.Effect`).
 var wounds := {}
 ## Rolling objects (flag 0x40, `set_rolling` 85): the orientation saved when rolling started

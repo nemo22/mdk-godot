@@ -164,6 +164,86 @@ floor normal `0x573bfc`… = (0, 0, 1), state 807. The chain gun stops.
 - Level 4's snow chase has a similar board mode (0x46ac4c, `K_SURF`/`K_SURFJ` in `LEVEL4S.SNI`,
   sounds `SKILAND`/`SKITURN`, the board object `0x573c30`) ❓ not analysed yet.
 
+## Sniper mode (`0x573a60`)
+
+- **Entering** (`damp_move` 0x46883c, key `KM_SNIPE`, once per press): only with Kurt's state
+  priority below 8, standing on a floor (vertical speed 0) that isn't an active fan or conveyor.
+  The chain gun stops, speeds are cleared and Kurt goes to state 803 (`SNIPERON`, `K_STILL` held,
+  camera distance 0, eye 4 above the feet); a phase counter `0x573a64` then copies the `SNIPERS1`
+  frame, selects the sniper projection (`0x57428c`), resets the pitch and starts `BREATH`.
+- **Leaving** (0x4645c8): the key again (state 900, `SNIPEROFF`), falling (off the floor with a
+  vertical speed below −30 or above 0), knock-downs and death, leaving a moving platform, the end of
+  the level, cutscenes ("stop" 0x4779b0) and `push_kurt`. Hits don't end it. The pitch goes back to
+  the arena's, the zoom to 2.4.
+- **Controls** (0x467384 instead of `damp_move`): Kurt only sidesteps (a quarter of the running
+  speed: 5 units/s, 10 with turbo) and still falls. The turn and forward/back keys turn and tilt the
+  view through speeds that accelerate by 0.4°/tick² (0.6 with turbo) up to 4°/tick (6), with the
+  friction 1.0667 (1.6 above 4); each frame `yaw −= v × ticks × zoom × 0.416667` and the same for the
+  pitch, which stays within ±50° (forward looks up). The mouse turns by `0.12 × zoom × 0.4167` per
+  unit. There's no sway.
+- **Zoom** (`0x57391c`, the inverse of the magnification): the focal length is `384 / zoom` pixels
+  (it's `600 / 2.4` = 250 in the normal view); 1 on entering (53° wide), at least 0.25 (4×), or
+  `min(0.25, 0.375 × height / distance)` of the locked target (height at least 10, 0x4678b0). The
+  zoom keys (`KM_ZOOMI`/`KM_ZOOMO`) accelerate a speed by 0.01 per tick up to 0.15, which decays by
+  0.015; zooming out multiplies the zoom by `1 + v` each frame, zooming in divides it (0x4687a4).
+  `ZOOM` loops while zooming.
+- **The view**: the scope is a 384×280 viewport at (107, 79) of the 600×360 view (centre
+  (299, 219)); the eye is 4 above the feet and moves forward by `5 (1 − cos pitch)` when looking
+  down; Kurt isn't drawn.
+- **Target lock** (0x43b65c, during projection): the nearest object (by depth) whose screen box
+  overlaps a 64-pixel square around the crosshair, not flagged 0x30 (`0x573a8c`): homing rounds chase
+  it and it sets the zoom limit.
+- **Screen** (`TRAVSPRT.BNI`): `SNIPERS1` (640×480 palette indices, no header) is the frame around
+  the view; `SNIPERS2` is a mask over the view (`u32 size`, then u16 words over 600-pixel rows:
+  below 0x8000, n × 4 literal bytes; 0x8nnn skips nnn transparent pixels; 0xFFnn, nn literal bytes;
+  0xFF00 ends), with holes for the scope and three 140×70 round cameras at (72, 10), (228, 0),
+  (384, 10) (each follows a round from behind, 90° wide, then shows colour 0x3c after a hit, 0xf4
+  after a kill, or the `SNIPERGA` animation after a miss); `CROSS` on the scope's centre; the zoom in
+  percent `round(100 × (1 − zoom)² × 1.05194)` in `SNIP_TXT` digits at (564, 155) with the
+  `SNIP_RNG` gauge (its bottom rows, following by 3 pixels a tick) at (552, 176); `SNIP_WEP` at
+  (112, 304), the icons `SNIP_W1`–`W6` of the types with ammo and the selected type's `SNIP_Ln` and
+  count (0x490fd8, 0x490fa8); the loaded rounds as 3D models along keyframes (0x41eb10, 0x490e58).
+- **Ammo** (`0x5743e8` selected type, counts at `0x5743ef + 4 × type`; zeroed on each level): 0 the
+  bullet (always), 1 `SW_HOME` homing bullets, 2 `SW_SGREN` grenades, 3 `SW_HGREN` homing grenades,
+  4 `SW_LGREN` mortar rounds, 5 `SW_BONES` Bones' air strike (pickups give 8, 3, 3, 8, 1, halved on
+  hard above 1). Keys pick a type directly or step through the ones with ammo.
+- **Clip** (0x41eb10): up to 3 rounds (`0x5743ea`) and a timer (`0x5743eb`) dropping by 4 per second;
+  while it runs, rounds load one per frame (`SNIPRELD`), only as many as there's ammo for (except
+  bullets). Firing (0x461e88) needs the fire key, 5 frames since the last shot, the timer at 0 and a
+  free round slot: a round is used, the timer goes up by 1 (a shot every 0.25 s), or to 3 when the
+  clip is empty. Changing type raises the timer to 3 before the new rounds load. `SNIPERSHOT`.
+- **Rounds** (3 slots of 0xfc bytes at `0x573c98`, 0x462708 after the objects): from the eye along
+  the view, tested every frame along the segment moved against the objects (box, then the parts'
+  faces), then the arena's BSP.
+
+  | Type | Life (ticks) | Speed (units/s) | Movement |
+  | --- | --- | --- | --- |
+  | 0 bullet, 2 grenade | 75 | 1100 | straight (0x462f24), spinning 720°/s |
+  | 1, 3 homing | 240 | 400 → 100/250 | steers at the lock after 7 ticks (0x463174) |
+  | 4 mortar | 450 | 150 × cos pitch, vertical −150 × sin pitch | drag, gravity 32, bounces (0x46360c) |
+
+  - Homing: the yaw rate accelerates by 540°/s² towards the error (up to 270°/s, back to 0 when it
+    has the wrong sign, never overshooting), the pitch turns by 120°/s, the speed aims for 250 when
+    within 35° of the target (else 100), rising by 200/s, falling by 500/s. The aim is the target's
+    `HEAD` part if it has one, else its box.
+  - Mortar: `f = h / (|vz| + h)`, `h −= f × 60 dt`, while rising `vz −= (1 − f) × 60 dt`, then
+    gravity 32 (−220 at most); fans lift it. On the arena: `0x491ef0` = the round, the triangle
+    group's hit script (kind 1, hit type 4; `bomb_follow_path` can guide it), then
+    `v −= 1.75 (v·n) n`, and it settles after 15 ticks once stopped.
+  - Hits: bullets take 8 hit points (not from objects with 65000 or more), set the hit event to the
+    part + 1 (`if_hit_part`) and the hit point, face and direction (`obj+0x210`…, for
+    `special_130`); at 0 the object dies. Grenades and the mortar explode (0x4638cc): 150 damage to
+    objects and triangle groups and 75 to Kurt within 25 (50 for the mortar), hit type −7. A bullet
+    hitting the arena does 8 to its triangle group (kind 1). The slot stays busy while its camera
+    watches: 45 ticks after a hit, 30 after a miss or an explosion.
+- **Bones' air strike** (type 5, 0x4641ac, 0x43fa0c): needs a point hit within 5000 units with open
+  sky 1000 units above it and no strike out; it spawns `X_STRIKE`, which flies a 5-key spline over
+  the target at 150 units/s, 30 units above the arena, dropping 9 `X_TOOTH` bombs (grenades) around
+  it; from level 6 on there's only one strike and it dives into the target (a 450-damage blast).
+- **Sounds**: `SNIPERON`, `SNIPEROFF`, `BREATH`, `ZOOM`, `SNIPERSHOT`, `SNIPRELD`, `RASPBER`.
+- The port has entering and leaving, the controls, the zoom and lock, the screen (without the
+  round cameras and the 3D clip) and rounds of types 0–4; the air strike isn't done yet.
+
 ## The minecrawler's timer (0x4240c4)
 
 Each level but the last gives Kurt 45, 30 or 20 minutes (by difficulty: 81000, 54000, 36000 ticks

@@ -19,6 +19,8 @@
 ##   --spawn-box=TEXTURE       Create a `spawn_box` object showing that texture in front of Kurt.
 ##   --fx                      Spawn slime drops and bubbles in front of Kurt (effects test).
 ##   --shatter=GROUP           Shatter a triangle group of Kurt's arena (`shatter_group` test).
+##   --probe=x,y               Print the arena surfaces above and below that point.
+##   --sniper[=zoom]           Enter sniper mode after the delay (optionally zoomed, 1 to 0.25).
 ##   --event=N                 Run `special_event` N after the delay (cutscenes, end of level).
 extends Node3D
 
@@ -50,6 +52,7 @@ func _ready() -> void:
 	kurt.setup(sprites, level.get_palette(), level.get_sound)
 	hud.setup(kurt, sprites, level.get_palette(), MDKFti.load_file(MDKData.path("MISC/MDKFONT.FTI")))
 	kurt.died.connect(_on_kurt_died)
+	kurt.inventory.difficulty = Settings.difficulty
 	if args.has("health"):
 		kurt.health = int(args.health)
 	if args.has("give"):
@@ -97,6 +100,12 @@ func _ready() -> void:
 		var alien := scripts.find_object_named("XG")
 		if alien:
 			scripts.effects.attach(alien, 2, 3)
+	if args.has("probe"):
+		_probe(args.probe.split_floats(","))
+	if args.has("sniper"):
+		kurt._enter_sniper(true)
+		if args.sniper != "":
+			kurt.zoom = float(args.sniper)
 	if args.has("event"):
 		scripts.special_event(scripts.get_arena_state(scripts.current_arena).controller, int(args.event))
 	if args.has("use"):
@@ -113,6 +122,35 @@ func _ready() -> void:
 		Args.screenshot_and_quit(get_tree(), args.screenshot, 20)
 	if args.has("profile"):
 		_profile(float(args.profile))
+
+
+## Prints every arena surface above and below an MDK point x,y (tests of the floors).
+func _probe(at: PackedFloat64Array) -> void:
+	var space := get_world_3d().direct_space_state
+	var from := MDKMeshBuilder.to_godot(Vector3(at[0], at[1], at[2] if at.size() > 2 else 10000.0))
+	var exclude: Array[RID] = []
+	for i in 20:
+		var query := PhysicsRayQueryParameters3D.create(from, MDKMeshBuilder.to_godot(Vector3(at[0], at[1], -10000.0)), MDKScriptRuntime.LEVEL_LAYER)
+		query.exclude = exclude
+		query.hit_back_faces = true
+		var hit := space.intersect_ray(query)
+		if hit.is_empty():
+			break
+		print("probe z %.1f normal %s %s group %d" % [hit.position.y, MDKScriptRuntime.to_mdk(hit.normal).snapped(Vector3.ONE * 0.01),
+				hit.collider.get_meta(&"arena", "?"), hit.collider.get_meta(&"group", 0)])
+		from = hit.position + Vector3.DOWN * 0.01
+	# The arena triangles over the point, whether solid or not.
+	for arena_name: String in level._arenas:
+		var arena: MDKArena = level._arenas[arena_name]
+		var point := Vector2(at[0], at[1])
+		for tri in arena.triangle_flags.size():
+			var a := arena.vertices[arena.triangle_indices[tri * 3]]
+			var b := arena.vertices[arena.triangle_indices[tri * 3 + 1]]
+			var c := arena.vertices[arena.triangle_indices[tri * 3 + 2]]
+			if Geometry2D.point_is_inside_triangle(point, Vector2(a.x, a.y), Vector2(b.x, b.y), Vector2(c.x, c.y)):
+				var n := (b - a).cross(c - a)
+				var z := a.z - (n.x * (point.x - a.x) + n.y * (point.y - a.y)) / n.z if n.z != 0.0 else a.z
+				print("triangle %s %d z %.1f flags %x material %d" % [arena_name, tri, z, arena.triangle_flags[tri], arena.triangle_materials[tri]])
 
 
 ## The level is over: go on to the next one after a while, or back to the menu after the last one.
@@ -169,6 +207,12 @@ func _profile(seconds: float) -> void:
 	if scripts.vm:
 		print("unimplemented opcodes (opcode: count): ", scripts.vm.unimplemented)
 		print("effects %d, debris pieces %d" % [scripts.effects.get_child_count(), scripts.debris.piece_count()])
+		var playing := {}
+		for node in get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false) + get_tree().root.find_children("*", "AudioStreamPlayer", true, false):
+			if node.playing:
+				var key := "%s %s %s %.0fdB" % [node.get_class(), node.bus, node.get_meta(&"sound", "?"), node.volume_db]
+				playing[key] = playing.get(key, 0) + 1
+		print("sounds playing: ", playing)
 		for obj in scripts.objects:
 			print("  %s_%d %s %s yaw %d move %d path %d anim %s frame %d speed %.1f health %d flags %x%s" % [
 					obj.type_name, obj.instance_id, obj.arena, obj.mdk_position.round(), obj.yaw, obj.move_command,

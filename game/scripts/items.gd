@@ -179,7 +179,7 @@ func _activate(obj: MDKObject) -> void:
 			_update_mortar(obj)
 		KurtInventory.Item.KEY:
 			# The "key" becomes the nuke (`SW_NUKE`): a white flash, its animation, then the blast.
-			var nuke := runtime._find_model(obj.arena, "SW_NUKE")
+			var nuke := runtime.find_model(obj.arena, "SW_NUKE")
 			if nuke:
 				obj.setup("SW_NUKE", nuke, runtime._get_resolver(obj.arena))
 				obj.update_transform()

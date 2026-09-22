@@ -15,7 +15,7 @@ var _current := 0
 func _ready() -> void:
 	for i in 2:
 		var player := AudioStreamPlayer.new()
-		player.bus = &"Master"
+		player.bus = &"Music"
 		player.volume_db = -80.0
 		add_child(player)
 		_players.push_back(player)
