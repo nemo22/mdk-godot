@@ -449,6 +449,11 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			var c := cos(deg_to_rad(obj.yaw))
 			var s := sin(deg_to_rad(obj.yaw))
 			obj.velocity += Vector3(-o[0] * c - o[1] * s, -o[1] * c - o[0] * s, o[2])
+		93:  # accel_toward_point: velocity towards a point (Manhattan-normalized)
+			var to_point := Vector3(o[1], o[2], o[3]) - obj.mdk_position
+			var length := absf(to_point.x) + absf(to_point.y) + absf(to_point.z)
+			if length > 0.0:
+				obj.velocity += to_point / length * o[0]
 		211:  # stop_velocity
 			obj.velocity = Vector3.ZERO
 		38:  # if_vel_z

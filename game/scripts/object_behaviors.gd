@@ -81,8 +81,15 @@ func setup_door(obj: MDKObject) -> void:
 			obj.hatch_parts |= 1 << i
 
 
-## Pickups fall with a chute, then float and spin.
+## Pickups fall with a chute, then float and spin; taken ones shrink away in 30 ticks.
 func update_pickup(obj: MDKObject) -> void:
+	if obj.flags & MDKObject.FLAG_COLLECTED:
+		obj.parameter_timer -= 1.0
+		obj.model_scale = maxf(obj.parameter_timer / 30.0, 0.0)
+		obj.yaw = fposmod(obj.yaw + dt * PICKUP_TURN_SPEED * 4.0, 360.0)
+		if obj.parameter_timer <= 0.0:
+			runtime.remove(obj)
+		return
 	if obj.flags & (MDKObject.FLAG_GRAVITY | MDKObject.FLAG_LANDED) == MDKObject.FLAG_GRAVITY:
 		if obj.contact_flags & MDKObject.CONTACT_FLOOR:
 			obj.height_offset = PICKUP_HOVER

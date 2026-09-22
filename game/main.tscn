@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://game/follow_camera.tscn" id="4_camera"]
 [ext_resource type="Script" path="res://game/level_audio.gd" id="5_audio"]
 [ext_resource type="Script" path="res://game/scripts/script_runtime.gd" id="6_scripts"]
+[ext_resource type="Script" path="res://game/hud/hud.gd" id="7_hud"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
@@ -26,6 +27,17 @@ level = NodePath("../Level")
 script = ExtResource("5_audio")
 level = NodePath("../Level")
 target = NodePath("../Kurt")
+
+[node name="HUDLayer" type="CanvasLayer" parent="."]
+
+[node name="HUD" type="Control" parent="HUDLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("7_hud")
 
 [node name="Info" type="Label" parent="."]
 offset_left = 8.0

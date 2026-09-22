@@ -43,7 +43,7 @@ const CHUTE_BRAKE := 256.0
 ## Seconds standing still before the idle animation plays.
 const IDLE_DELAY := 6.0
 
-enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE }
+enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD }
 
 ## Muzzle flash (`K_MUZZF`) offsets in the states that don't show the chain gun firing by
 ## themselves (`damp_animate`): a random offset of 0–4 pixels is added. `SHOT` and `RUN_FIRE` have
@@ -71,6 +71,7 @@ const STATE_ANIMATIONS := {
 	State.LAND: ["K_LAND", false],
 	State.SHOT: ["K_SHOT", true],
 	State.RUN_FIRE: ["K_RUNFIR", true],
+	State.DEAD: ["K_BANG", false],
 }
 
 ## Yaw in radians (0 faces -Z).
@@ -88,6 +89,13 @@ var chute_open := false
 var health := 100
 ## The chain gun is firing (`0x573a38`).
 var firing := false
+var inventory := KurtInventory.new()
+## Red flash after hits (`0x573b70`: +25 per damage point, 75–180, -4 per tick); once Kurt is dead
+## it's the fade of the skull, and the level restarts at 255.
+var hurt_flash := 0.0
+## Invulnerability time in seconds (`0x573bd4`).
+var invulnerable := 0.0
+signal died
 var sprites: MDKBni
 ## Returns a sound by name (see `Level.get_sound()`).
 var get_sound: Callable
@@ -99,6 +107,7 @@ var _jump_released := true
 var _footstep_pair := false
 var _sound_players: Array[AudioStreamPlayer] = []
 var _gun_player: AudioStreamPlayer
+var _gun_super := false
 var _muzzle_frame := 0
 var _ticks := 0
 
@@ -137,7 +146,17 @@ func teleport(p_position: Vector3, p_yaw: float) -> void:
 
 
 ## Damage from aliens (`hurt_kurt`).
+## Damage from aliens (`hurt_kurt` 0x46a604): 2/3 on easy (at least 1), double on hard.
 func hurt(damage: int) -> void:
+	if health == 0 or invulnerable > 0.0 or state == State.DEAD:
+		return
+	match inventory.difficulty:
+		0:
+			damage = maxi(damage * 2 / 3, 1)
+		2:
+			damage *= 2
+	if damage > 0:
+		hurt_flash = clampf(hurt_flash + damage * 25, 75.0, 180.0)
 	health = maxi(health - damage, 0)
 
 
@@ -152,6 +171,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	invulnerable = maxf(invulnerable - delta, 0.0)
+	if state == State.DEAD:
+		_update_death(delta)
+		return
+	hurt_flash = maxf(hurt_flash - 4.0 * TICKS * delta, 0.0)
 	var turbo := Input.is_action_pressed(&"turbo")
 	var on_floor := is_on_floor()
 	_update_turning(delta, turbo)
@@ -173,16 +197,33 @@ func _physics_process(delta: float) -> void:
 	_update_muzzle()
 
 
+## Dead Kurt lies still while the skull fades in (`damp_control`), then the level restarts (the
+## original loads the last saved game).
+func _update_death(delta: float) -> void:
+	velocity = Vector3(0.0, velocity.y - GRAVITY * delta, 0.0) if not is_on_floor() else Vector3.ZERO
+	move_and_slide()
+	state_time += delta
+	var animation := sprites.get_animation("K_BANG")
+	animation_frame = minf(animation_frame + TICKS * delta, animation.frame_count - 1)
+	sprite.show_frame(animation, int(animation_frame))
+	hurt_flash += 2.0 * TICKS * delta
+	if hurt_flash > 255.0:
+		set_physics_process(false)
+		died.emit()
+
+
 ## Holding fire fires the chain gun (`damp_move`); the hits are done by the scripts runtime
 ## (`MDKScriptRuntime.fire_chain_gun()`).
 func _update_firing() -> void:
-	var fire := Input.is_action_pressed(&"fire")
-	if fire == firing:
+	var fire := Input.is_action_pressed(&"fire") and health > 0
+	var super_gun := inventory.super_chain_gun > 0
+	if fire == firing and (not firing or super_gun == _gun_super):
 		return
 	firing = fire
+	_gun_super = super_gun
 	if firing:
-		# `GATTFIRE` loops while firing (`MULTIFIRE` with the super chain gun).
-		var stream: AudioStreamWAV = get_sound.call("GATTFIRE")
+		# `GATTFIRE` loops while firing (`MULTIFIRE` with the super chain gun, 0x46c3e4).
+		var stream: AudioStreamWAV = get_sound.call("MULTIFIRE" if super_gun else "GATTFIRE")
 		if stream:
 			if stream.loop_mode == AudioStreamWAV.LOOP_DISABLED:
 				stream = stream.duplicate()
@@ -269,6 +310,15 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 	state_time += delta
 	var animation := sprites.get_animation(STATE_ANIMATIONS[state][0])
 	var animation_done := animation_frame >= animation.frame_count - 1
+	if health == 0 and is_on_floor():
+		# Dead: the death animation once on the floor (state 1002).
+		firing = false
+		_gun_player.stop()
+		muzzle.visible = false
+		hurt_flash = 0.0
+		_set_state(State.DEAD)
+		sprite.show_frame(sprites.get_animation("K_BANG"), 0)
+		return
 	if not is_on_floor():
 		if chute_open:
 			_set_state(State.CHUTE)

@@ -5,8 +5,10 @@
 ##   --viewer                  Open the free-camera level viewer instead.
 ##   --models                  Open the model viewer instead (see `model_viewer.gd`).
 ##   --at=x,y,z[,yaw]          Start Kurt there instead (MDK coordinates and yaw, for tests).
+##   --delay=seconds           Wait this long before walking.
 ##   --walk=seconds            Hold "move forward" for this long (for automated tests).
 ##   --fire                    Hold "fire" (for automated tests).
+##   --health=N                Start with this much health (for tests).
 ##   --wait=seconds            Wait this long before the screenshot.
 ##   --screenshot=path.png     Save a screenshot after loading (and walking) and quit.
 ##   --profile=seconds         Print performance and script statistics after this long, then quit.
@@ -17,6 +19,7 @@ extends Node3D
 @onready var kurt: Kurt = $Kurt
 @onready var scripts: MDKScriptRuntime = $Scripts
 @onready var info: Label = $Info
+@onready var hud: HUD = $HUDLayer/HUD
 
 
 func _ready() -> void:
@@ -33,6 +36,10 @@ func _ready() -> void:
 
 	var sprites := MDKBni.load_file(MDKData.path("TRAVERSE/TRAVSPRT.BNI"))
 	kurt.setup(sprites, level.get_palette(), level.get_sound)
+	hud.setup(kurt, sprites, level.get_palette())
+	kurt.died.connect(_on_kurt_died)
+	if args.has("health"):
+		kurt.health = int(args.health)
 	# The start position is slightly below the landing pad (the original lands Kurt by parachute),
 	# so drop him from a bit higher.
 	kurt.teleport(level.get_start_position() + Vector3.UP * 3.0, level.get_start_yaw())
@@ -45,6 +52,8 @@ func _ready() -> void:
 
 	if args.has("fire"):
 		Input.action_press(&"fire")
+	if args.has("delay"):
+		await get_tree().create_timer(float(args.delay)).timeout
 	if args.has("walk"):
 		Input.action_press(&"move_forward")
 		await get_tree().create_timer(float(args.walk)).timeout
@@ -55,6 +64,12 @@ func _ready() -> void:
 		Args.screenshot_and_quit(get_tree(), args.screenshot, 20)
 	if args.has("profile"):
 		_profile(float(args.profile))
+
+
+## Kurt died: play the level again (the original loads the last saved game).
+func _on_kurt_died() -> void:
+	GameState.level = level.number
+	get_tree().reload_current_scene()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -80,6 +95,8 @@ func _profile(seconds: float) -> void:
 	var physics_ms := 0.0
 	while Time.get_ticks_msec() - start < seconds * 1000.0:
 		await get_tree().process_frame
+		if not is_inside_tree():
+			return
 		var now := Time.get_ticks_msec()
 		slowest = maxi(slowest, now - last)
 		last = now
@@ -97,5 +114,9 @@ func _profile(seconds: float) -> void:
 					obj.type_name, obj.instance_id, obj.arena, obj.mdk_position.round(), obj.yaw, obj.move_command,
 					obj.path, obj.animation.name if obj.animation else "-", obj.animation_frame, obj.speed, obj.health, obj.flags,
 					" door %x" % obj.door_state if obj.flags & MDKObject.FLAG_DOOR else ""])
-		print("Kurt health %d" % kurt.health)
+		var items := []
+		for slot in kurt.inventory.slots:
+			items.push_back("%s×%d" % [KurtInventory.Item.keys()[slot.item], slot.count])
+		print("Kurt at %s health %d, items %s (selected %d), ammo %s, super chain gun %d" % [MDKScriptRuntime.to_mdk(kurt.global_position).round(), kurt.health, items,
+				kurt.inventory.selected, kurt.inventory.ammo, kurt.inventory.super_chain_gun])
 	get_tree().quit()

@@ -21,6 +21,8 @@ const FLAG_WEAK_PARTS := 0x2000
 const FLAG_NO_TURNING := 0x10000
 ## A pickup that has landed.
 const FLAG_LANDED := 0x20000
+## A pickup Kurt has taken (it vanishes).
+const FLAG_COLLECTED := 0x40000
 const FLAG_DOOR := 0x100000
 const FLAG_PICKUP := 0x200000
 const FLAG_PATH_PUSHES := 0x8000000

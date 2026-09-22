@@ -58,6 +58,7 @@ var _arenas := {}
 var _animations := {}
 var _resolvers := {}
 var _next_instance := 1000
+var _previous_kurt_position := Vector3()
 var _time := 0.0
 var _tick_usec := 0
 var _tick_count := 0
@@ -129,7 +130,10 @@ func _tick() -> void:
 		if not state.started:
 			state.started = true
 			_spawn_dti_aliens(arena_name)
-	# Kurt moves, then fires, then the objects run (`game_frame`).
+	# Kurt moves and takes pickups, then fires, then the objects run (`game_frame`).
+	if _tick_count > 0:
+		collect_pickups()
+	_previous_kurt_position = kurt_position
 	if kurt.firing:
 		fire_chain_gun()
 	if not current_arena.is_empty():
@@ -254,6 +258,11 @@ func fall_out(obj: MDKObject) -> void:
 ## `_aim_score()`) or, without one, the arena up to 150 units away.
 func fire_chain_gun() -> void:
 	var origin := kurt_position + Vector3(0, 0, 5)
+	# The super chain gun does 6 times the damage while its time lasts.
+	var super_gun := kurt.inventory.super_chain_gun > 0
+	var damage := CHAIN_GUN_DAMAGE * (6 if super_gun else 1)
+	if super_gun:
+		kurt.inventory.tick_super_chain_gun(1)
 	var best: MDKObject = null
 	var best_score := -1.0
 	var best_part := -1
@@ -284,7 +293,7 @@ func fire_chain_gun() -> void:
 			best_part = -1
 			best_bounds = bounds
 	if best:
-		_chain_gun_hit(best, best_part, best_bounds, origin)
+		_chain_gun_hit(best, best_part, best_bounds, origin, damage, super_gun)
 		return
 	var direction := Vector2.from_angle(deg_to_rad(target_yaw)) * CHAIN_GUN_WALL_REACH
 	var hit := raycast(origin, origin + Vector3(direction.x, direction.y, 0.0))
@@ -323,18 +332,18 @@ static func _is_weak_part(obj: MDKObject, index: int) -> bool:
 	return part_name.begins_with(obj.weak_prefix.left(obj.weak_prefix_length))
 
 
-func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3) -> void:
+func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3, damage: int, super_gun: bool) -> void:
 	var center := bounds.get_center()
 	var direction := rad_to_deg(atan2(center.y - origin.y, center.x - origin.x))
 	obj.hit_event = -1
 	if part >= 0 and part < obj.part_health.size():
-		obj.part_health[part] -= CHAIN_GUN_DAMAGE
+		obj.part_health[part] -= damage
 		if obj.part_health[part] <= 0:
 			obj.part_health[part] = 0
 			obj.hit_event = part + 1
 	if obj.health < 65000:
-		obj.health -= CHAIN_GUN_DAMAGE
-	obj.hit_type = -1
+		obj.health -= damage
+	obj.hit_type = -2 if super_gun else -1
 	obj.hit_direction = direction
 	if obj.health > 0:
 		# Sparks on the side of the box facing Kurt.
@@ -343,6 +352,10 @@ func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3) ->
 		spark(point, 1, obj.labels[1])
 		return
 	obj.health = 0
+	if super_gun:
+		# The super chain gun throws what it kills away.
+		var push := Vector2.from_angle(deg_to_rad(direction)) * 20.0
+		obj.velocity += Vector3(push.x, push.y, 0.0)
 	kill(obj, direction + 180.0)
 
 
@@ -419,6 +432,30 @@ func play_sound_at(sound_name: String, point: Vector3) -> void:
 	player.finished.connect(player.queue_free)
 	add_child(player)
 	player.play()
+
+
+## Kurt takes the pickups he runs through (`damp_collect_pickups` 0x46c448): the segment he moved
+## along this tick crosses a pickup's bounds, grown by 1 unit (and 5 downwards).
+func collect_pickups() -> void:
+	for obj in objects:
+		if obj.dead or obj.arena != current_arena or not obj.flags & MDKObject.FLAG_PICKUP \
+				or obj.flags & (MDKObject.FLAG_COLLECTED | MDKObject.FLAG_NOT_SOLID):
+			continue
+		var bounds := get_world_bounds(obj)
+		bounds = AABB(bounds.position - Vector3(1, 1, 5), bounds.size + Vector3(2, 2, 6))
+		if not bounds.has_point(kurt_position) and bounds.intersects_segment(_previous_kurt_position, kurt_position) == null:
+			continue
+		var sound := kurt.inventory.collect(obj.type_name, kurt)
+		if sound.is_empty():
+			continue
+		play_sound_at(sound, kurt_position)
+		obj.flags |= MDKObject.FLAG_COLLECTED | 0x1000
+		obj.parameter_timer = 30.0
+		obj.velocity = Vector3.ZERO
+		obj.flags &= ~MDKObject.FLAG_GRAVITY
+		if obj.attached:
+			remove(obj.attached)
+			obj.attached = null
 
 
 ## Spawns a connector (a door) between `obj`'s arena and `other_arena` (`spawn_connector`). A

@@ -94,6 +94,51 @@ per-state base: turning and strafing (0, 0), falling (40, 6), jumping (0, 0), ru
 hotspot plus that offset, before (behind) Kurt. The hits are described in
 [engine.md](engine.md#kurts-chain-gun-0x41a304).
 
+## Pickups (`damp_collect_pickups` 0x46c448)
+
+Every frame Kurt takes the pickups of his arena (flag 0x200000, not already taken: 0x40000) that
+the segment from his previous to his current position crosses; a pickup's box is its bounds grown
+by 1 unit, and 5 downwards. Taken pickups get flags 0x41000 and vanish in 30 ticks.
+
+- **Used at once** (table 0x4920e0, 0x46d478): sniper ammo `SW_HOME`, `SW_SGREN`, `SW_HGREN`,
+  `SW_LGREN`, `SW_BONES` (+8, 3, 3, 8, 1 of ammo type 1–5 at `0x5743f3`, halved on hard when above
+  1, and that type is selected); health `SW_H25` (+10, up to 100), `SW_H50` (+50, up to 100),
+  `SW_H100` (at least 100), `SW_H150` (at least 150), `SW_H01` (+1, up to 100); `SW_EWJ` and
+  `BONEFLC` are easter eggs. Sounds: `APPLE` for health, `BONES`, otherwise `COLLECT`.
+- **Inventory** (table 0x4921ac: 5 slots of 0x24 bytes at `0x57432c`, count `0x5743e0`, selection
+  `0x5743e4`): 1 `SW_DUMMY` (decoy), 2 `SW_INTER` (the World's Most Interesting Bomb, sound
+  `WMIB`), 3 `SW_TWIST` (tornado), 4 `SW_THUMP` (mortar), 5 `SW_HBOMB` (grenades: 5/3/1 per pickup on
+  easy/normal/hard, 1 in `DANT_2`), 6 `SW_GATT` (super chain gun: 400/200/100 ticks of 6× damage,
+  `0x5743ef`), 7 `SW_KEY`, 8 `SW_SEAL`, 9 `SW_SBONE`. Grenades and the super chain gun stack in their
+  slot; other pickups need a free slot (at most 5), else Kurt leaves them. The new item is selected
+  (except the super chain gun).
+- Scripts see a taken pickup through its flag 0x40000 (`if_flag_40000`).
+
+## Damage and death (`hurt_kurt` 0x46a604, `damp_control`)
+
+- Damage is ignored while Kurt is invulnerable (`0x573bd4`), dead or in some states; it's 2/3 on easy
+  (at least 1) and doubled on hard. Each hit adds `damage × 25` to the red flash `0x573b70`
+  (kept within 75–180, −4 per tick).
+- At 0 health, once on the floor, Kurt plays `K_BANG` (state 1002) and holds its last frame; the
+  `SKULL` image fades in at the centre of the view (`0x573b70` going up to 255), then the game loads
+  the last saved game (`LASTGAME`).
+
+## HUD (0x41e128)
+
+Drawn on the 600×360 view after the 3D scene:
+
+- **Health** (0x420830): the `SC_STAT` image at the bottom right (`600 − (w + 16)`, `360 − (h + 10)`)
+  with the health in its middle, in the digits of `SNIP_TXT` (8 pixels wide, 0x420bd0); the number
+  blinks (16 ticks out of 32) at 20 or less, and every other frame while invulnerable.
+- **Inventory** (0x46cce4): for 60 ticks after a change (`0x574328`), or always in sniper mode, the
+  items' `PICKUPS` icons (frame = item type − 1) at `(32 + 48 × slot, 328)` with their count above
+  when above 1 (the super chain gun shows its ticks); new items fly there from the pickup's place on
+  screen. The selected slot is framed (`48 × slot + 8…+0x37`, 304–351).
+- A boss health bar at the top (0x41f540, up to 500 pixels) while `0x573c74` > 0.
+- Messages (0x425474): a queue of up to 4 texts (pickup names, …) shown one after another.
+- In sniper mode: zoom level, ammo types (`SNIP_L1`–`SNIP_L6`, `SNIP_W1`–`SNIP_W6`) and counts,
+  range (`SNIP_RNG`).
+
 ## Camera (`camera_update`)
 
 - Distance D = 8 u behind Kurt's feet, pivot height H = 4.5 u (4.0 in sniper mode).

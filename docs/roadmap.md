@@ -16,15 +16,16 @@
 - Doors (connectors), pickups falling with chutes, arena triangle groups (hidden/non-solid parts),
   Kurt colliding with objects and carried by platforms.
 - Kurt's chain gun: firing animations and sound, auto-aimed hits, weak parts, hit events, deaths
-  and explosions.
+  and explosions; the super chain gun.
+- Pickups and the inventory, health, damage and death, the HUD (health and inventory).
 
 ## Next
 
 1. **Aliens and scripts**: effects (sparks, particles, debris), path planning around walls
    (`plan_move`), automatic banking, chains, triangle group hits, the second arena seen through
    open doors.
-2. **Weapons and sniper mode**: pickups and the inventory, Kurt's projectiles (grenades, mortar…),
-   the super chain gun, sniper mode, HUD (health, boss bar), Kurt's death.
+2. **Weapons and sniper mode**: using the items (grenades, mortar, decoys, the bomb…), Kurt's
+   projectiles, sniper mode, the rest of the HUD (boss bar, messages), saving and loading.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
 4. **Movement details**: ledge grab, slippery floors, conveyors, updrafts, camera roll, pushing Kurt
    away from walls instead of moving the camera closer, stopping on walls hit head-on.
