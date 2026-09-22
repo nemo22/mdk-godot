@@ -181,7 +181,7 @@ depend on other operands (see `complex_operand()` in
 | 174 | `if_ammo` | u8 slot, u8 compare, f32 a, b: *complex*, action: *complex* | branch | Condition: compare(Kurt's counter int[0x5743ef + slot*4] (weapon/ammo counters), a, b) with 0x45da90: 1 <, 2 >, 3 <=, 4 >=, 5 ==, 6 != (0.05 tolerance), 7 a<=v<=b, 8 v<=a or v>=b. |
 | 175 | `if_inventory` | u8 item_type, u8 compare, f32 a, b: *complex*, action: *complex* | branch | Condition: compare(sum of counts (+4) of the inventory entries (0x57432c, 0x24 bytes each, 0x5743e0 entries) whose type (+0) == item_type, a, b); compare as opcode 174. |
 | 176 | `if_flag_40000` | action: *cond_action* | branch | Condition: bit 0x4 of byte obj+0x14a (0x40000 of the flags dword obj+0x148) is set. |
-| 177 | `set_2c4` | value: *value* | next | obj+0x2c4 = value (float, 1000 by default; meaning unknown). |
+| 177 | `set_blast_range` | value: *value* | next | obj+0x2c4 = value (float, 1000 by default): blasts farther than this from the object don't hurt it (0x463a94). |
 | 178 | `explosion_damage` | position: *point*, f32 scale, f32 damage, f32 radius, u8 flags | next | Creates an explosion effect at the position and applies blast damage round(damage) within radius (0x463a94(pos, damage, radius, 1, 0, flags, -5); flags & 2 = also damage objects of the player's arena). |
 | 179 | `spawn_partner` | pstr type_name, off32 script (0 = none) | next | Spawns an enemy of type type_name at this object's position and links both as partners (obj+0x2b8 of each points to the other). |
 | 180 | `snap_to_partner` | offset: *optional* | next | If the object has a partner (obj+0x2b8), copies the partner's position into obj+0x10 and adds (dx,dy,dz) when given. |

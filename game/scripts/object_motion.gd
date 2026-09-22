@@ -47,6 +47,10 @@ func update(obj: MDKObject) -> void:
 	_apply_velocity(obj)
 	if obj.dead:
 		return
+	if obj.thrown_kind > 0:
+		runtime.items.update_thrown(obj)
+		if obj.dead:
+			return
 	if obj.flags & MDKObject.FLAG_PICKUP:
 		runtime.behaviors.update_pickup(obj)
 	var time := obj.animation_time

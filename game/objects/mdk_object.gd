@@ -146,6 +146,11 @@ var frame_sound_frame := 0
 ## Effects (explosions) last this many ticks, showing texture frame `effect_time`, then vanish.
 var effect_frames := 0
 var effect_time := 0.0
+## Kurt's thrown item (`obj+0x30a`: `KurtInventory.Item`), and its time left in ticks (`obj+0x30e`).
+var thrown_kind := 0
+var item_ticks := 0
+## Blasts farther than this don't hurt the object (`obj+0x2c4`, opcode 177).
+var blast_range := 1000.0
 ## Object carried along (a pickup's chute).
 var attached: MDKObject
 

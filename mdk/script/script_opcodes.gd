@@ -178,7 +178,7 @@ const MNEMONICS := {
 	174: "if_ammo",
 	175: "if_inventory",
 	176: "if_flag_40000",
-	177: "set_2c4",
+	177: "set_blast_range",
 	178: "explosion_damage",
 	179: "spawn_partner",
 	180: "snap_to_partner",

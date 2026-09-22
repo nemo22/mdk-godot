@@ -43,7 +43,10 @@ const CHUTE_BRAKE := 256.0
 ## Seconds standing still before the idle animation plays.
 const IDLE_DELAY := 6.0
 
-enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD }
+enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD, THROW }
+
+## Frame of `K_SPWEP` at which the item leaves Kurt's hand (`damp_animate`).
+const THROW_FRAME := 8
 
 ## Muzzle flash (`K_MUZZF`) offsets in the states that don't show the chain gun firing by
 ## themselves (`damp_animate`): a random offset of 0–4 pixels is added. `SHOT` and `RUN_FIRE` have
@@ -72,6 +75,7 @@ const STATE_ANIMATIONS := {
 	State.SHOT: ["K_SHOT", true],
 	State.RUN_FIRE: ["K_RUNFIR", true],
 	State.DEAD: ["K_BANG", false],
+	State.THROW: ["K_SPWEP", false],
 }
 
 ## Yaw in radians (0 faces -Z).
@@ -96,6 +100,12 @@ var hurt_flash := 0.0
 ## Invulnerability time in seconds (`0x573bd4`).
 var invulnerable := 0.0
 signal died
+## Kurt uses the selected item (0x46ce78): the scripts runtime throws it.
+signal item_used
+## Kurt presses "use" again while the World's Most Interesting Bomb is out (0x43f258).
+signal bomb_triggered
+## Whether an item may be used now (the runtime says no while a thrown item is active).
+var can_use_item: Callable
 var sprites: MDKBni
 ## Returns a sound by name (see `Level.get_sound()`).
 var get_sound: Callable
@@ -182,6 +192,9 @@ func _physics_process(delta: float) -> void:
 
 	var forward_input := Input.get_axis(&"move_back", &"move_forward")
 	var strafe_input := Input.get_axis(&"strafe_left", &"strafe_right")
+	if state == State.THROW:
+		forward_input = 0.0
+		strafe_input = 0.0
 	var air := 1.0 if on_floor else AIR_CONTROL
 	forward_speed = _accelerate(forward_speed, forward_input, turbo, 1.0, air, delta)
 	strafe_speed = _accelerate(strafe_speed, strafe_input, turbo, air, air, delta)
@@ -192,6 +205,7 @@ func _physics_process(delta: float) -> void:
 
 	_update_vertical(delta, on_floor)
 	move_and_slide()
+	_update_items()
 	_update_firing()
 	_update_state(delta, forward_input, strafe_input)
 	_update_muzzle()
@@ -212,10 +226,38 @@ func _update_death(delta: float) -> void:
 		died.emit()
 
 
+## Item keys (`damp_move`, 0x46ca38): select a slot (1–5, next, previous) or use the selected
+## item: on the floor Kurt throws it with `K_SPWEP`, in the air it's used at once.
+func _update_items() -> void:
+	var inventory := inventory
+	if not inventory.slots.is_empty():
+		if Input.is_action_just_pressed(&"item_next"):
+			inventory.selected = (inventory.selected + 1) % inventory.slots.size()
+		if Input.is_action_just_pressed(&"item_prev"):
+			inventory.selected = posmod(inventory.selected - 1, inventory.slots.size())
+		for i in 5:
+			if Input.is_action_just_pressed(StringName("item_%d" % (i + 1))) and i < inventory.slots.size():
+				inventory.selected = i
+	if not Input.is_action_just_pressed(&"item_use") or state in [State.THROW, State.DEAD]:
+		return
+	if inventory.slots.is_empty():
+		return
+	var item := inventory.slots[inventory.selected].item
+	if item == KurtInventory.Item.SUPER_CHAIN_GUN:
+		return
+	if can_use_item.is_valid() and not can_use_item.call(item):
+		bomb_triggered.emit()
+		return
+	if is_on_floor():
+		_set_state(State.THROW)
+	elif state in [State.JUMP, State.RUN_JUMP, State.FALL, State.CHUTE]:
+		item_used.emit()
+
+
 ## Holding fire fires the chain gun (`damp_move`); the hits are done by the scripts runtime
 ## (`MDKScriptRuntime.fire_chain_gun()`).
 func _update_firing() -> void:
-	var fire := Input.is_action_pressed(&"fire") and health > 0
+	var fire := Input.is_action_pressed(&"fire") and health > 0 and state != State.THROW
 	var super_gun := inventory.super_chain_gun > 0
 	if fire == firing and (not firing or super_gun == _gun_super):
 		return
@@ -318,6 +360,14 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 		hurt_flash = 0.0
 		_set_state(State.DEAD)
 		sprite.show_frame(sprites.get_animation("K_BANG"), 0)
+		return
+	if state == State.THROW and is_on_floor() and not animation_done:
+		# Kurt stands still while throwing; the item leaves his hand on frame 8.
+		var previous := int(animation_frame)
+		animation_frame += TICKS * delta
+		if previous < THROW_FRAME and int(animation_frame) >= THROW_FRAME:
+			item_used.emit()
+		sprite.show_frame(animation, mini(int(animation_frame), animation.frame_count - 1))
 		return
 	if not is_on_floor():
 		if chute_open:

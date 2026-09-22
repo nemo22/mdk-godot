@@ -167,6 +167,11 @@ static func _compare(value: float, cond: Array) -> bool:
 	return false
 
 
+func _bomb() -> MDKObject:
+	var bomb := runtime.items.bomb
+	return bomb if bomb and not bomb.dead else null
+
+
 ## Reads a 16-bit value as signed.
 static func _s16(value: int) -> int:
 	return value - 0x10000 if value >= 0x8000 else value
@@ -482,13 +487,21 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 		102:  # if_path_done
 			return _branch(obj, ins, obj.path == 0)
 
-		# The World's Most Interesting Bomb (not implemented: there's never one).
+		# The World's Most Interesting Bomb: aliens gather around it.
 		165:  # if_no_bomb
-			return _branch(obj, ins, true)
+			return _branch(obj, ins, _bomb() == null)
 		166:  # if_bomb_visible
-			return _branch(obj, ins, false)
-		167:  # move_to_bomb
-			pass
+			var bomb := _bomb()
+			return _branch(obj, ins, bomb != null and runtime.raycast(obj.mdk_position + Vector3(0, 0, 5), bomb.mdk_position + Vector3(0, 0, 5)).is_empty())
+		167:  # move_to_bomb: next to the bomb, on this side, a little aside
+			var bomb := _bomb()
+			if bomb:
+				var away := Vector2(obj.mdk_position.x - bomb.mdk_position.x, obj.mdk_position.y - bomb.mdk_position.y).normalized()
+				var aside := away.orthogonal() * randf_range(-1.0, 1.0) * minf(o[0], 6.0)
+				var spot: Vector2 = Vector2(bomb.mdk_position.x, bomb.mdk_position.y) + away * o[0] + aside
+				_start_move(obj, 78, Vector3(spot.x, spot.y, bomb.mdk_position.z + 2.5 + obj.height_offset))
+		177:  # set_blast_range: blasts farther than this don't hurt the object
+			obj.blast_range = o[0]
 
 		# Variables and flags.
 		65:  # set_var

@@ -25,8 +25,9 @@ Open the project in Godot 4.7 and run it. Command line options (after `--`):
   the scripts.
 
 Controls: W/S or Up/Down to run, A/D to strafe, the mouse or Left/Right to turn, Space to jump (hold
-it while falling to open the chute), Shift for turbo, the left mouse button or Ctrl to fire, Escape
-to go back to the menu. In the level
+it while falling to open the chute), Shift for turbo, the left mouse button or Ctrl to fire, E or Enter
+to use the selected item (Tab, `[`, `]`, the mouse wheel or 1–5 select it), Escape to go back to
+the menu. In the level
 viewer: WASD to move, Q/E to go down/up, click to look around, Shift to go faster.
 
 ## Layout

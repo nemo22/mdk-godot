@@ -302,6 +302,47 @@ objects by 0x462708): a per-frame move function, a lifetime, types 1–4 (type 4
 arena); hitting an object sets its hit event, hitting the arena runs the group hit code, and types
 2–4 explode (0x4638cc, 150 damage within 25 or 50 units).
 
+## Kurt's items (0x46ce78, 0x43deac)
+
+Pressing "use" (`damp_move`) with an item selected (not the super chain gun) makes Kurt throw it:
+on the floor with `K_SPWEP` (state 805; the item leaves on frame 8), in the air at once. Only one
+thrown item at a time, except decoys (types 1, 8, 9); while the World's Most Interesting Bomb is out,
+"use" sets it off instead (0x43f258).
+
+- **Throw** (0x46ce78): an object with the item's pickup model at Kurt's position + 4 in height,
+  flags `|= 0x818a6`, kind `obj+0x30a` = item type, 150 ticks of flight (`obj+0x30e`; 750 for types
+  8 and 9), no friction, scale 0.1 growing to 1 (3/s), Kurt's yaw, velocity 25 units/s forward (75
+  for grenades) and 15 up (0 with the chute). The slot's count goes down.
+- **Flight** (0x43deac, 0x43eb48): the item moves with gravity and collisions, and stops on the
+  part boxes of objects (grenades: any object without flags 0x810; the others only objects with
+  flag 0x1000000). It activates (flag 0x4000, no more gravity or collisions) when it hits something
+  or its time runs out (the mortar only on the floor):
+  - 5 grenade: blast of 150 on objects and triangle groups, 75 on Kurt, radius 40; explosion ×2.
+  - 1 decoy: walks forward at 5 units/s for 450 ticks (`SW_DUM_M` animation); aliens aim at it
+    (`0x573c20`) instead of Kurt.
+  - 2 the World's Most Interesting Bomb (`0x573c24`): holds the first frame of its `SW_INTER`
+    animation and spins at 235°/s for 600 ticks (or until Kurt presses "use"), then plays it and
+    blows up: blast of 450 (67 on Kurt) within 80 units, explosion ×3. Alien scripts react to it
+    (`if_no_bomb`, `if_bomb_visible`, `move_to_bomb`).
+  - 3 tornado (0x40741c, sound `TORNADO`), 4 mortar (`SW_THUMP`, 0x43e690), 7 the nuke (the
+    `SW_KEY` pickup becomes `SW_NUKE`, 900 ticks), 8/9 seal and super bone.
+- The item animations (`SW_INTER`, `SW_DUM_I`, `SW_DUM_M`, `SW_THUMP`, `SW_NUKE`, `H150_I`,
+  `H150_R`, `X_STRIKB`) are model animations stored in `TRAVSPRT.BNI`.
+
+### Blasts (0x463a94)
+
+`blast(center, damage, …, radius, count kills, source, targets, hit type)`, targets being 1 Kurt,
+2 objects, 4 arena triangle groups:
+
+- **Objects** (alive, without flags 0x10/0x20): the damage on a box (0x463958) is 0 beyond the
+  radius or behind a wall, and falls off with the distance from the centre to the box centre minus
+  half the box's diagonal. Weak parts take it separately. The source object takes the full damage.
+  Objects farther than their `obj+0x2c4` (opcode 177, 1000 by default) are spared. The hit event
+  is −2 (or a destroyed weak part), with the blast's hit type.
+- **Kurt**: his distance (to his feet + 1) is doubled, or beyond the radius behind a wall; within
+  the radius he's hurt by at most 15.
+- **Triangle groups** that react to hits get a hit of type 3 or 4 on their nearest triangle.
+
 ## Arena triangle groups
 
 The top byte of an arena triangle's flags is its **group** (1–21, 0 = none; masks and counters

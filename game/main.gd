@@ -9,6 +9,8 @@
 ##   --walk=seconds            Hold "move forward" for this long (for automated tests).
 ##   --fire                    Hold "fire" (for automated tests).
 ##   --health=N                Start with this much health (for tests).
+##   --give=SW_A,SW_B          Start with these pickups (for tests).
+##   --use                     Press "use item" after the delay (for tests).
 ##   --wait=seconds            Wait this long before the screenshot.
 ##   --screenshot=path.png     Save a screenshot after loading (and walking) and quit.
 ##   --profile=seconds         Print performance and script statistics after this long, then quit.
@@ -40,6 +42,9 @@ func _ready() -> void:
 	kurt.died.connect(_on_kurt_died)
 	if args.has("health"):
 		kurt.health = int(args.health)
+	if args.has("give"):
+		for pickup: String in args.give.split(","):
+			kurt.inventory.collect(pickup, kurt)
 	# The start position is slightly below the landing pad (the original lands Kurt by parachute),
 	# so drop him from a bit higher.
 	kurt.teleport(level.get_start_position() + Vector3.UP * 3.0, level.get_start_yaw())
@@ -54,6 +59,10 @@ func _ready() -> void:
 		Input.action_press(&"fire")
 	if args.has("delay"):
 		await get_tree().create_timer(float(args.delay)).timeout
+	if args.has("use"):
+		Input.action_press(&"item_use")
+		await get_tree().create_timer(0.1).timeout
+		Input.action_release(&"item_use")
 	if args.has("walk"):
 		Input.action_press(&"move_forward")
 		await get_tree().create_timer(float(args.walk)).timeout

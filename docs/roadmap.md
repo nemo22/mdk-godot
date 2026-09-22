@@ -18,14 +18,15 @@
 - Kurt's chain gun: firing animations and sound, auto-aimed hits, weak parts, hit events, deaths
   and explosions; the super chain gun.
 - Pickups and the inventory, health, damage and death, the HUD (health and inventory).
+- Items: throwing, grenades, the decoy, the World's Most Interesting Bomb, blasts.
 
 ## Next
 
 1. **Aliens and scripts**: effects (sparks, particles, debris), path planning around walls
    (`plan_move`), automatic banking, chains, triangle group hits, the second arena seen through
    open doors.
-2. **Weapons and sniper mode**: using the items (grenades, mortar, decoys, the bomb…), Kurt's
-   projectiles, sniper mode, the rest of the HUD (boss bar, messages), saving and loading.
+2. **Weapons and sniper mode**: the other items (tornado, mortar, nuke, seal, super bone), sniper
+   mode, the rest of the HUD (boss bar, messages), saving and loading.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
 4. **Movement details**: ledge grab, slippery floors, conveyors, updrafts, camera roll, pushing Kurt
    away from walls instead of moving the camera closer, stopping on walls hit head-on.

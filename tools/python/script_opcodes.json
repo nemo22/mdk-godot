@@ -4457,7 +4457,7 @@
  },
  {
   "opcode": 177,
-  "mnemonic": "set_2c4",
+  "mnemonic": "set_blast_range",
   "operands": [
    {
     "type": "complex",
@@ -4467,7 +4467,7 @@
    }
   ],
   "flow": "next",
-  "summary": "obj+0x2c4 = value (float, 1000 by default; meaning unknown).",
+  "summary": "obj+0x2c4 = value (float, 1000 by default): blasts farther than this from the object don't hurt it (0x463a94).",
   "fields": [
    "obj+0x2c4"
   ],

@@ -42,13 +42,15 @@ var kurt: Kurt
 var vm: MDKScriptVM
 var motion: MDKObjectMotion
 var behaviors: MDKObjectBehaviors
+var items: MDKItems
 var global_variables := [0.0, 0.0, 0.0, 0.0]
 var global_flags := 0
 ## Kurt's position (MDK coordinates) and the target of alien scripts (Kurt, or a decoy).
 var kurt_position := Vector3()
 var target_position := Vector3()
-## Yaw of the target (degrees, MDK convention).
+## Yaw of the target and of Kurt (degrees, MDK convention).
 var target_yaw := 0.0
+var kurt_yaw := 0.0
 ## Option toggled by cheat codes (`if_option`, the original's `0x5742dc`), 1 by default.
 var option := 1
 var current_arena := ""
@@ -70,6 +72,10 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	vm = MDKScriptVM.new(self, MDKScriptDecoder.new(level.cmi.bytes))
 	motion = MDKObjectMotion.new(self)
 	behaviors = MDKObjectBehaviors.new(self)
+	items = MDKItems.new(self)
+	kurt.item_used.connect(items.use_item)
+	kurt.bomb_triggered.connect(items.trigger_bomb)
+	kurt.can_use_item = items.can_use
 
 
 func get_arena_state(arena_name: String) -> ArenaState:
@@ -123,6 +129,11 @@ func _tick() -> void:
 	target_position = kurt_position
 	# Kurt's yaw 0 faces -Z (Godot) = +Y (MDK).
 	target_yaw = fposmod(90.0 + rad_to_deg(kurt.yaw), 360.0)
+	kurt_yaw = target_yaw
+	# Aliens aim at the decoy while it walks (`script_run`).
+	if items.decoy and not items.decoy.dead:
+		target_position = items.decoy.mdk_position
+		target_yaw = items.decoy.yaw
 	var arena_name := level.get_arena_at(kurt.global_position)
 	if not arena_name.is_empty() and arena_name != current_arena:
 		current_arena = arena_name
@@ -223,23 +234,34 @@ func explode(obj: MDKObject, yaw: float) -> void:
 	var center := bounds.get_center() if obj.model else obj.mdk_position
 	play_sound_at(obj.labels[0] if not obj.labels[0].is_empty() else "EXPLODE", center)
 	remove(obj)
+	var effect := spawn_explosion(obj.arena, center, 1.0, yaw)
+	if effect:
+		effect.model_scale = bounds.size.z / maxf(effect.model.bounds.size.z, 0.1) * 1.5
+		effect.update_transform()
+
+
+## Spawns an explosion (0x43cb2c): the global model 0 (`EXPLODE`), whose animated texture plays
+## once, one frame per tick, pitched towards the camera.
+func spawn_explosion(arena_name: String, center: Vector3, scale: float, yaw := 0.0) -> MDKObject:
 	var model_name: String = level.cmi.model_offsets.keys()[0] if not level.cmi.model_offsets.is_empty() else ""
-	var effect := spawn(obj, model_name, center, yaw, -1, 0, false)
+	var effect := spawn(get_arena_state(arena_name).controller, model_name, center, yaw, -1, 0, false)
 	if not effect:
-		return
+		return null
 	effect.flags |= MDKObject.FLAG_NOT_TARGET | MDKObject.FLAG_NOT_SOLID_2
 	effect.effect_frames = 26
-	var texture := _get_resolver(obj.arena).find_texture(effect.model.materials[0]) if not effect.model.materials.is_empty() else null
+	var texture := _get_resolver(arena_name).find_texture(effect.model.materials[0]) if not effect.model.materials.is_empty() else null
 	if texture:
 		effect.effect_frames = texture.frame_count
-	effect.model_scale = bounds.size.z / maxf(effect.model.bounds.size.z, 0.1) * 1.5
+	effect.model_scale = scale
 	var camera := get_viewport().get_camera_3d()
 	if camera:
 		var eye := to_mdk(camera.global_position)
 		var horizontal := Vector2(eye.x - center.x, eye.y - center.y).length()
+		effect.yaw = fposmod(rad_to_deg(atan2(eye.y - center.y, eye.x - center.x)), 360.0) if yaw == 0.0 else yaw
 		effect.pitch = rad_to_deg(atan2(eye.z + 5.0 - center.z, horizontal))
 	effect.set_texture_frame(0)
 	effect.update_transform()
+	return effect
 
 
 ## An object fell far below its arena (0x43d884): it switches to its death script, put back
