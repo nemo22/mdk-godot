@@ -6,6 +6,10 @@ extends RefCounted
 ## Item types of the inventory (by pickup model).
 enum Item { NONE, DUMMY, INTERESTING_BOMB, TORNADO, MORTAR, GRENADE, SUPER_CHAIN_GUN, KEY, SEAL, SUPER_BONE }
 
+## A pickup was taken: the name of its message (its pickup name, a text of `MDKFONT.FTI` shown for
+## 2 seconds, 0x46d098). `SW_H01` and `BONEFLC` have none.
+signal picked_up(text_name: String)
+
 const ITEM_PICKUPS := {
 	"SW_DUMMY": Item.DUMMY,
 	"SW_INTER": Item.INTERESTING_BOMB,
@@ -49,10 +53,18 @@ var difficulty := 1
 func collect(pickup: String, kurt: Kurt) -> String:
 	var index := INSTANT_PICKUPS.find(pickup)
 	if index >= 0:
+		if index != 9 and index != 11:
+			picked_up.emit(pickup)
 		return _use_instant(index, kurt)
 	if not ITEM_PICKUPS.has(pickup):
 		return ""
-	var item: Item = ITEM_PICKUPS[pickup]
+	var sound := _collect_item(ITEM_PICKUPS[pickup])
+	if not sound.is_empty():
+		picked_up.emit(pickup)
+	return sound
+
+
+func _collect_item(item: Item) -> String:
 	# Grenades and the super chain gun stack in their slot.
 	if item in [Item.GRENADE, Item.SUPER_CHAIN_GUN]:
 		for i in slots.size():

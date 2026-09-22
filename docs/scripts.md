@@ -82,8 +82,9 @@ conditions such as `if_anim_done` test their state. See [engine.md](engine.md#ob
 - [`MDKScriptVM`](../game/scripts/script_vm.gd) runs a frame of an object's script like
   `script_run`. Opcodes that aren't implemented yet are still decoded (so scripts never lose sync)
   and their conditions are false; `--profile` lists the ones that were hit. The levels use 236
-  opcodes; 34 aren't implemented yet, mostly effects (`attach_effect`, lights, debris), HUD
-  (`hud_message`, `boss_bar`), fans and wind, chains and cutscene events.
+  opcodes; 32 aren't implemented yet, mostly effects (`attach_effect`, lights, debris), fans and
+  wind, chains and cutscene events. `tools/python/find_opcode.py` lists where the levels use an
+  opcode.
 - Each object's target is chosen when its script runs (`script_run`): Kurt, or the walking decoy
   (`0x573c20`), or the aliens' target set by `set_target_mode` 1 (`0x491e48`), unless the object has
   target mode 2 (always Kurt).
@@ -111,9 +112,12 @@ conditions such as `if_anim_done` test their state. See [engine.md](engine.md#ob
   distance 0 to `cone` at `max_range`; the line of sight goes from Kurt's z + 5 to the object's z + 2.
 - `find_object` (245) mode 2 looks for Kurt's items (flag 0x1000): level 5's `XGUNTAM` uses it to
   go and eat thrown seals and bones.
-- `hud_message` (247, 0x425400) queues a text of `MDKFONT.FTI` (e.g. `MU5_INI`) in a 4-entry queue
-  (`0x57ecf0`, 12 bytes each: time, flags, text; flags & 2 = in front); 0x425474 shows it in one or
-  two lines (`\n`), fading.
+- `hud_message` (247, 0x425400) queues a text of `MDKFONT.FTI` (e.g. `MU5_INI`, the bones' countdown
+  `BONE1`–`BONE10` in level 4, the practice room's hints `DA2_*` in level 7), always with flag 1
+  (growing and shrinking), see [gameplay.md](gameplay.md#hud-0x41e128).
+- `boss_bar` (181) only acts while Kurt fires. Mode 0 shows `max − counter` of a triangle group
+  (the destructible parts of the level 3 and 4 bosses), mode 1 `(high − v) / (high − low) × max` of
+  an arena variable `v` (`arena+0x48`: `HMO_3`, `DANT_7`, level 8's `XEARTH`).
 - The alarm (movement command 15) plays `ALERT` every 32 frames and keeps `0x573aec` at 10 ticks
   (`if_alarm`).
 

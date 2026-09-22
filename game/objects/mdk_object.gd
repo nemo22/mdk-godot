@@ -55,6 +55,8 @@ var spawn_position := Vector3()
 var previous_position := Vector3()
 
 var health := 100
+## The health set last by `set_health` (`obj+0x2a2`), the maximum of the health bar.
+var max_health := 0
 var indestructible := false
 var flags := 0
 ## Script flag word `obj+0x244`.

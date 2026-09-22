@@ -1,15 +1,22 @@
 ## The in-game HUD, drawn like the original (`0x41e128`) on the 600×360 view, scaled to the window:
 ## Kurt's health in the `SC_STAT` panel (bottom right, digits from `SNIP_TXT`, blinking at 20 or
 ## less, 0x420830), and the inventory for 2 seconds after it changes (`PICKUPS` icons in 5 slots
-## at the bottom left, 0x46cce4). See `docs/gameplay.md` ("HUD").
+## at the bottom left, 0x46cce4), messages (`HUDMessages`) and the health bar of the object Kurt
+## shoots at (top left, 0x41e3c8). See `docs/gameplay.md` ("HUD").
 class_name HUD
 extends Control
 
 const VIEW_HEIGHT := 360.0
 ## The inventory stays on screen this long after a change (`0x574328`, in ticks).
 const INVENTORY_TICKS := 60
+## The health bar: 500 pixels for 900 hit points, from y 4 to 10, filled with palette colour 3
+## and framed (up to the maximum) with colour 4.
+const BAR_SCALE := 500.0 / 900.0
+const BAR_WIDTH := 500
 
 var kurt: Kurt
+var scripts: MDKScriptRuntime
+var messages := HUDMessages.new()
 
 var _panel: Texture2D
 var _skull: Texture2D
@@ -20,11 +27,17 @@ var _icon_hotspots: Array[Vector2i] = []
 var _inventory_ticks := 0
 var _last_inventory := ""
 var _blink := 0
+var _bar_fill := Color()
+var _bar_frame := Color()
 
 
-func setup(p_kurt: Kurt, sprites: MDKBni, palette: MDKPalette) -> void:
+func setup(p_kurt: Kurt, sprites: MDKBni, palette: MDKPalette, fti: MDKFti) -> void:
 	kurt = p_kurt
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	messages.setup(fti, palette)
+	kurt.inventory.picked_up.connect(func(text_name: String) -> void: messages.push(text_name, HUDMessages.FLAG_ZOOM, 2.0))
+	_bar_fill = palette.get_color(3)
+	_bar_frame = palette.get_color(4)
 	_panel = _make_texture(sprites.get_image("SC_STAT"), palette)
 	_skull = _make_texture(sprites.get_image("SKULL"), palette)
 	var digits := sprites.get_image("SNIP_TXT")
@@ -67,6 +80,10 @@ func _physics_process(_delta: float) -> void:
 	queue_redraw()
 
 
+func _process(delta: float) -> void:
+	messages.update(delta)
+
+
 ## Scale from the original 600×360 view to the window.
 func _scale() -> float:
 	return size.y / VIEW_HEIGHT
@@ -97,6 +114,18 @@ func _draw() -> void:
 		_draw_number(kurt.health, center)
 	if _inventory_ticks > 0:
 		_draw_inventory()
+	if scripts:
+		_draw_bar(scripts.get_bar())
+	messages.draw(self, view.x)
+
+
+func _draw_bar(bar: Vector2i) -> void:
+	if bar.y <= 0:
+		return
+	var fill := clampi(roundi(bar.x * BAR_SCALE), 0, BAR_WIDTH)
+	var frame := clampi(roundi(bar.y * BAR_SCALE), 0, BAR_WIDTH)
+	draw_rect(Rect2(0, 4, fill + 1, 7), _bar_fill)
+	draw_rect(Rect2(0.5, 4.5, frame, 6), _bar_frame, false, 1.0)
 
 
 ## Draws a number (at most 999) centred on `position.x`, with 8-pixel wide digits (0x420bd0).

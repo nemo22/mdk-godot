@@ -15,6 +15,7 @@
 ##   --screenshot=path.png     Save a screenshot after loading (and walking) and quit.
 ##   --profile=seconds         Print performance and script statistics after this long, then quit.
 ##   --no-scripts              Don't run the level scripts (no objects or aliens).
+##   --town=seconds            The minecrawler flattens the town after this long (for tests).
 extends Node3D
 
 @onready var level: Level = $Level
@@ -38,7 +39,7 @@ func _ready() -> void:
 
 	var sprites := MDKBni.load_file(MDKData.path("TRAVERSE/TRAVSPRT.BNI"))
 	kurt.setup(sprites, level.get_palette(), level.get_sound)
-	hud.setup(kurt, sprites, level.get_palette())
+	hud.setup(kurt, sprites, level.get_palette(), MDKFti.load_file(MDKData.path("MISC/MDKFONT.FTI")))
 	kurt.died.connect(_on_kurt_died)
 	if args.has("health"):
 		kurt.health = int(args.health)
@@ -52,7 +53,11 @@ func _ready() -> void:
 		var at: PackedFloat64Array = args.at.split_floats(",")
 		kurt.teleport(MDKMeshBuilder.to_godot(Vector3(at[0], at[1], at[2])), deg_to_rad(at[3] - 90.0) if at.size() > 3 else kurt.yaw)
 	if not args.has("no-scripts"):
+		scripts.messages = hud.messages
 		scripts.setup(level, kurt)
+		hud.scripts = scripts
+		if args.has("town"):
+			scripts.town_ticks = roundi(float(args.town) * 30.0)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 	if args.has("fire"):

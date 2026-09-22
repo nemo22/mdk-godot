@@ -113,6 +113,9 @@ by 1 unit, and 5 downwards. Taken pickups get flags 0x41000 and vanish in 30 tic
   slot; other pickups need a free slot (at most 5), else Kurt leaves them. The new item is selected
   (except the super chain gun).
 - Scripts see a taken pickup through its flag 0x40000 (`if_flag_40000`).
+- Every pickup shows its name as a message for 2 seconds (the text of `MDKFONT.FTI` with the pickup's
+  name, e.g. `SW_HBOMB` "Hand Grenade", `SW_H150` "I Feel Top!!!", `SW_EWJ` "Groovy!"), except
+  `SW_H01` and `BONEFLC`.
 
 ## Damage and death (`hurt_kurt` 0x46a604, `damp_control`)
 
@@ -129,6 +132,16 @@ by 1 unit, and 5 downwards. Taken pickups get flags 0x41000 and vanish in 30 tic
 - At 0 health, once on the floor, Kurt plays `K_BANG` (state 1002) and holds its last frame; the
   `SKULL` image fades in at the centre of the view (`0x573b70` going up to 255), then the game loads
   the last saved game (`LASTGAME`).
+
+## The minecrawler's timer (0x4240c4)
+
+Each level but the last gives Kurt 45, 30 or 20 minutes (by difficulty: 81000, 54000, 36000 ticks
+at `0x574270`) before the minecrawler flattens the town it's heading for. Then the screen shakes
+(5), the message `OOT_L1`–`OOT_L5` ("There goes Laguna Beach!", "Bye Bye Lindfield!", …, flags 3,
+5 s) shows and the global flag 30 (`0x573b5f` & 0x40) is set, which the debriefing reads
+(`DEB1F`…). If the global flag 31 is set (the minecrawler heading for a second town: Sydney,
+Hamburg, Moscow, Tokyo, Paris), the message is `OOT_L1A`… and the flag 29 is set instead. The timer
+stops at the end of the level (`0x573b60`).
 
 ## Screen effects
 
@@ -149,8 +162,21 @@ Drawn on the 600×360 view after the 3D scene:
   items' `PICKUPS` icons (frame = item type − 1) at `(32 + 48 × slot, 328)` with their count above
   when above 1 (the super chain gun shows its ticks); new items fly there from the pickup's place on
   screen. The selected slot is framed (`48 × slot + 8…+0x37`, 304–351).
-- A boss health bar at the top (0x41f540, up to 500 pixels) while `0x573c74` > 0.
-- Messages (0x425474): a queue of up to 4 texts (pickup names, …) shown one after another.
+- **Health bar** (0x41e3c8) at the top left while `0x573c74` > 0 seconds: a bar of colour 3 (green)
+  from x 0 to `health × 500 / 900`, framed in colour 4 up to `max × 500 / 900`, y 4–10. It shows
+  for a second the object the chain gun hits if its maximum (`obj+0x2a2`, the last `set_health`)
+  is at most 900, or the hit points of the weak part it hits (at most 900); `boss_bar` (opcode 181)
+  shows the arena's values while Kurt fires. It goes away early when the object dies or its health
+  or maximum are out of 1–900, and in sniper mode.
+- **Messages** (0x425400 queues, 0x425474 draws): 4 entries of `time, flags, text` at `0x57ecf0`;
+  flag 2 puts the text at the front. The current message (`0x57ec90`, two lines of 36 bytes split at
+  the `\n` escape) is drawn in `FONTBIG`, centred on the view with its baseline at y 120 (two
+  lines: 105 and 135); a line of 600 pixels or more is drawn in `FONTSML`. With flag 1 it grows
+  from nothing to full size in 0.5 s (scaled about the baseline, the lines at 120 ∓ 15 × scale)
+  and shrinks back after its time; its time runs twice as fast while others wait. Sources: pickups
+  (flag 1, 2 s), `hud_message` (opcode 247: the practice room's hints, the bones' countdown, …),
+  the level timer (flags 3, 5 s), `FALL_T1` "Avoid the RADAR!" (the first level's fall, flag 1,
+  3 s) and `NODIE` (a cheat, flags 3, 2 s).
 - In sniper mode: zoom level, ammo types (`SNIP_L1`–`SNIP_L6`, `SNIP_W1`–`SNIP_W6`) and counts,
   range (`SNIP_RNG`).
 

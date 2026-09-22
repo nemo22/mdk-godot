@@ -12,6 +12,15 @@ const PROJECTILE_FLAGS := 0x80820
 const CHAIN_GUN_DAMAGE := 1
 const CHAIN_GUN_REACH := 140.0
 const CHAIN_GUN_WALL_REACH := 150.0
+## Objects with more hit points than this don't show the health bar.
+const MAX_BAR_HEALTH := 900
+## Ticks before the minecrawler reaches the level's town, per difficulty (45, 30 and 20 minutes).
+const TOWN_TICKS := [81000, 54000, 36000]
+## Global flags: the minecrawler went for the second town (set by the game), the first town or
+## the second one was flattened (tested by the debriefing).
+const FLAG_SECOND_TOWN := 1 << 31
+const FLAG_TOWN_FLATTENED := 1 << 30
+const FLAG_SECOND_TOWN_FLATTENED := 1 << 29
 ## Collision layer of the level geometry (objects are on layer 2, see `MDKObject.update_body()`, and
 ## Kurt on layer 3).
 const LEVEL_LAYER := 1
@@ -63,6 +72,20 @@ var global_573c4c := 0
 var sky_mode := 0
 ## Option toggled by cheat codes (`if_option`, the original's `0x5742dc`), 1 by default.
 var option := 1
+## On-screen messages (`hud_message`), set by the game.
+var messages: HUDMessages
+## The health bar at the top left of the view (`0x573c74` seconds left, 0x41e3c8): for a second
+## after the chain gun hits an object with at most 900 hit points or one of its weak parts, or
+## while a script sets it (`boss_bar`, only while Kurt fires).
+var bar_time := 0.0
+## The object whose health the bar shows (`0x573c78`), or null for `bar_health` of `bar_max`
+## (the arena's own object).
+var bar_object: MDKObject
+var bar_health := 0
+var bar_max := 0
+## Ticks left before the minecrawler flattens the town (`0x574270`, 0x4240c4); none on the last
+## level.
+var town_ticks := 0
 var current_arena := ""
 var objects: Array[MDKObject] = []
 
@@ -86,6 +109,8 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	kurt.item_used.connect(items.use_item)
 	kurt.bomb_triggered.connect(items.trigger_bomb)
 	kurt.can_use_item = items.can_use
+	if level.number < 8:
+		town_ticks = TOWN_TICKS[kurt.inventory.difficulty]
 
 
 func get_arena_state(arena_name: String) -> ArenaState:
@@ -185,6 +210,11 @@ func _tick() -> void:
 	target_yaw = fposmod(90.0 + rad_to_deg(kurt.yaw), 360.0)
 	kurt_yaw = target_yaw
 	alarm_ticks = maxi(alarm_ticks - 1, 0)
+	_update_bar()
+	if town_ticks > 0:
+		town_ticks -= 1
+		if town_ticks == 0:
+			_flatten_town()
 	var arena_name := level.get_arena_at(kurt.global_position)
 	if not arena_name.is_empty() and arena_name != current_arena:
 		current_arena = arena_name
@@ -474,11 +504,16 @@ func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3, da
 		if obj.part_health[part] <= 0:
 			obj.part_health[part] = 0
 			obj.hit_event = part + 1
+		if obj.part_max_health[part] <= MAX_BAR_HEALTH:
+			show_bar_values(obj.part_health[part], obj.part_max_health[part])
 	if obj.health < 65000:
 		obj.health -= damage
 	obj.hit_type = -2 if super_gun else -1
 	obj.hit_direction = direction
 	if obj.health > 0:
+		if part < 0 and obj.max_health <= MAX_BAR_HEALTH:
+			bar_object = obj
+			bar_time = 1.0
 		# Sparks on the side of the box facing Kurt.
 		var toward := Vector2.from_angle(deg_to_rad(direction))
 		var point := center - Vector3(toward.x * bounds.size.x, toward.y * bounds.size.y, 0.0) * 0.5
@@ -490,6 +525,51 @@ func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3, da
 		var push := Vector2.from_angle(deg_to_rad(direction)) * 20.0
 		obj.velocity += Vector3(push.x, push.y, 0.0)
 	kill(obj, direction + 180.0)
+
+
+## The minecrawler reached the town: the screen shakes and a message says which town is gone
+## (`OOT_L1`, "There goes Laguna Beach!", or `OOT_L1A` for the second town).
+func _flatten_town() -> void:
+	raise_shake(5.0)
+	var text_name := "OOT_L%d" % (level.number - 2)
+	if global_flags & FLAG_SECOND_TOWN:
+		text_name += "A"
+		global_flags |= FLAG_SECOND_TOWN_FLATTENED
+	else:
+		global_flags |= FLAG_TOWN_FLATTENED
+	if messages:
+		messages.push(text_name, HUDMessages.FLAG_ZOOM | HUDMessages.FLAG_FRONT, 5.0)
+
+
+## Shows the health bar with these values for a second (the arena's own object, `boss_bar`).
+func show_bar_values(health: int, max_health: int) -> void:
+	bar_object = null
+	bar_health = health
+	bar_max = max_health
+	bar_time = 1.0 if health > 0 else 0.0
+
+
+## The bar's health and maximum, or zeros while it's hidden.
+func get_bar() -> Vector2i:
+	if bar_time <= 0.0:
+		return Vector2i.ZERO
+	if bar_object:
+		return Vector2i(bar_object.health, bar_object.max_health)
+	return Vector2i(bar_health, bar_max)
+
+
+## The bar goes away after its time, or when its object dies or can't show a bar.
+func _update_bar() -> void:
+	if bar_time <= 0.0:
+		return
+	bar_time -= TICK
+	if bar_object and (not is_instance_valid(bar_object) or bar_object.dead):
+		bar_object = null
+		bar_time = 0.0
+		return
+	var bar := get_bar()
+	if bar.y == 0 or bar.y > MAX_BAR_HEALTH or bar.x < 1:
+		bar_time = 0.0
 
 
 ## Sparks where a shot hits (`0x41e8f4`); a ricochet sound (the object's, set by opcode 26, or

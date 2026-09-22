@@ -246,11 +246,15 @@ Corridors use the level texture archive (`C_FLR1`…).
   `INTRO1A` ❓.
 - `MISC/MDKFONT.FTI`: `u32 size, u32 count`, then per entry `char[8] name, u32 offset` (relative to
   file offset 4) ✅. Entries:
-  - texts (NUL-terminated, `
-` for line breaks) ✅: `OPT0`–`OPT4` (main menu), `OM_*` (options),
+  - texts (NUL-terminated, `\n` escapes for line breaks) ✅: `OPT0`–`OPT4` (main menu), `OM_*` (options),
     `KM_*` (key names), `PAUSED`, …
   - `SYS_PAL`: 64 colors, the same as the first 64 of `MDKOPT`'s palette ✅
-  - `FONTBIG`, `FONTSML`: 256 glyph offsets (relative to the font), then glyphs starting with
-    `u8 width, s8 y offset, u16 height`, followed by compressed rows ❓
+  - `FONTBIG`, `FONTSML`: 256 `u32` glyph offsets (relative to the font, 0 = no glyph: a space of 6
+    or 4 pixels), then per glyph `s8 ascent, s8 descent, u8 width` and
+    `(ascent + descent + 1) × width` palette indices row by row (0 transparent), drawn from `ascent`
+    rows above the baseline (0x415a20) ✅. The colours are in the first 64 of the palette. `FONTBIG`
+    (152 glyphs, about 30 pixels high, gold) has ASCII 33–126 and Latin-1/Polish letters; `FONTSML`
+    (204 glyphs, orange) also has key names (`Esc`, `F1`, `Home`, arrows, …) at codes 1–31 and
+    128–159 for the key settings.
   - `F8`: 8 × 8 bitmap font (128 characters) ✅
   - `SND_PUSH`: menu sound (RIFF WAV) ✅

@@ -5,7 +5,7 @@
 ## - Texts (`OPT0`–`OPT4` main menu, `OM_*` options, `KM_*` key names, …): NUL-terminated,
 ##   with `\n` escapes for line breaks.
 ## - `SYS_PAL`: the first 64 palette colors used by the interface.
-## - `FONTBIG`, `FONTSML`: fonts (256 glyph offsets, then compressed glyphs ❓).
+## - `FONTBIG`, `FONTSML`: fonts (see `MDKFont`).
 ## - `F8`: 8×8 bitmap font (128 characters, 8 bytes each).
 ## - `SND_PUSH`: menu sound (RIFF WAV).
 class_name MDKFti
@@ -47,3 +47,12 @@ func get_text(entry_name: String, fallback := "") -> String:
 	var offset: int = entries[entry_name][0]
 	var end := bytes.find(0, offset)
 	return bytes.slice(offset, end).get_string_from_ascii().replace("\\n", "\n")
+
+
+## Returns a text entry as bytes (the fonts' character set), `\n` escapes included, or an empty
+## array if it doesn't exist.
+func get_text_bytes(entry_name: String) -> PackedByteArray:
+	if not entries.has(entry_name):
+		return PackedByteArray()
+	var offset: int = entries[entry_name][0]
+	return bytes.slice(offset, bytes.find(0, offset))

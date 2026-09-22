@@ -6,10 +6,11 @@
   sky), collision with the arena geometry.
 - Kurt: sprite animations, animation states, movement with the original constants (acceleration,
   turbo, turning, jumping, falling, chute), third person camera following the original formula.
-- Main menu with the original background, texts, music and sound (the original font isn't decoded).
+- Main menu with the original background, texts, music and sound (drawn in a Godot font, not yet
+  in the original ones).
 - Model and animation formats (models section and CMI models), model viewer.
 - Level viewer (`--viewer`) and model viewer (`--models`).
-- Scripts: bytecode decoder (every script of the game) and VM with 202 of the 236 opcodes the levels
+- Scripts: bytecode decoder (every script of the game) and VM with 204 of the 236 opcodes the levels
   use; arena scripts, DTI aliens, spawned objects, commands between objects, partners, group hit
   scripts.
 - Object movement like the original: spline paths, walking, flying, chasing, formations,
@@ -22,14 +23,15 @@
 - Items: throwing, grenades, the decoy, the World's Most Interesting Bomb, the tornado, the mortar,
   the nuke, the seal and the bone, blasts (also on triangle groups).
 - Kurt knocked down by hits and pushes, screen shake and white flash.
+- HUD messages in the original fonts (pickups, script hints), the health bar, the minecrawler's
+  timer.
 
 ## Next
 
-1. **Aliens and scripts**: the last 34 opcodes (effects, lights, fans and wind, chains, cutscene
+1. **Aliens and scripts**: the last 32 opcodes (effects, lights, fans and wind, chains, cutscene
    events), effects (sparks, particles, debris), path planning around walls (`plan_move`),
    automatic banking, the second arena seen through open doors.
-2. **Weapons and sniper mode**: sniper mode and its ammo (Bones' air strike), the rest of the HUD
-   (boss bar, messages), saving and loading.
+2. **Weapons and sniper mode**: sniper mode and its ammo (Bones' air strike), saving and loading.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
 4. **Movement details**: ledge grab, slippery floors, conveyors, updrafts, camera roll, pushing Kurt
    away from walls instead of moving the camera closer, stopping on walls hit head-on.

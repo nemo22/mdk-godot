@@ -415,6 +415,34 @@ effects (0x45fec4, hit type −10). For a triangle of group g (1–16):
   `if_hit_weapon` tests). Returns 1.
 
 Level 5 uses this for its fans: `if_hit_weapon -8` means only the nuke destroys them.
+## Fans and conveyors 🟡 (not in the port yet)
+
+Each arena has a list of fans and conveyors (`arena+0x45e`, taken from a free list `0x573f8c`,
+fatal "No spare fans"). An entry: `+0 next, +4 arena, +8 name, +0xc id (hotspot id or triangle
+group), +0x10 param, +0x14 type (−1 = conveyor), +0x18 strength, +0x1c enable mask (−1 = all),
++0x20 box x0, y0, z0, x1, y1, z1, +0x38/+0x3c texture scroll, +0x40 target strength, +0x44 ramp
+rate`.
+
+- `fan_create` (142, 0x413a94) builds a fan on the arena's hotspot of type 7 with that id (the
+  DTI arena records: `type, id, angle`, then the box `x0, y0, z0, x1, y1, z1`, the last 12 bytes
+  being the "name" field of other records). z0 is lowered by 0.5. With type 6 the strength
+  operand is a time: strength = `(z1 − z0) / (time − 0.5)`. All levels use type 6.
+  `fan_enable` (190) sets or clears bit 0 of the mask, `fan_remove` (143) removes it.
+- **Updrafts** (`updraft_query` 0x413c24 → 0x413d14): for a point inside a fan's box (up to z1 + 5)
+  whose caller mask matches (1 Kurt, 2 objects, 4 and 8 not identified yet), the fan gives a
+  target vertical speed `strength × f`: `f` = 1 for type 6 except in the top 5 units, where it's
+  `1 − (z − (z1 − 5)) × 0.2`; types 1–5 fade with the relative height `h` (1 − h², (1 − h)²,
+  1 − h, 1 − h³, (1 − h)³); param ≠ 0 means `h` = 1. Near the top (type 6) a small wobble
+  (`0x490d7c`, ±0.1 per frame) is added and a faster upward speed is halved towards it. The
+  vertical speed then rises by `(target + 64) × dt` up to the target. Kurt tests his arena, then
+  the neighbour one (`0x573a68`), with mask 1; objects test theirs with mask 2 (position `obj+0x10`,
+  velocity `obj+0x28`).
+- Every frame (0x414230) the strength ramps towards `+0x40`; a conveyor scrolls the UVs of its
+  triangle group (wrapping at ±512) and pushes what stands on the group (`conveyor_push` 0x413c80:
+  box fields `+0x20..+0x28` as a direction × strength × dt); a fan spawns a rising particle at a
+  random point of its box (z0 + 0.25) one frame in 8 (0x4052d4, pool `arena+0x5c`).
+- `wind_zone` (224) uses the type-9 hotspots (see [script_opcodes.md](script_opcodes.md)).
+
 ## Globals
 
 Globals used by the scripts and objects are listed in [scripts/notes_part2.md](scripts/notes_part2.md)
@@ -429,8 +457,14 @@ and [scripts/notes_part3.md](scripts/notes_part3.md). The main ones:
 | 0x573aa8 | screen shake; 0x573b68 white flash; 0x573b70 red flash |
 | 0x573c24 | the World's Most Interesting Bomb (a decoy), if active |
 | 0x5742dc | option toggled by cheat codes (1 by default; opcode 232, BHOLE/BHOLE2) |
-| 0x573b4c | the 4 global script variables |
+| 0x573b4c | the 4 global script variables; 0x573b5c the global flags (bits 29–31: towns, see [gameplay.md](gameplay.md#the-minecrawlers-timer-0x4240c4)) |
 | 0x520a84 | table of loaded global models (80 entries of 0x88 bytes) |
+| 0x573a38 | Kurt fires (the fire key is held) |
+| 0x573c74, 0x573c78 | health bar: seconds left, object shown (or the arena's own object at `arena+0x118`) |
+| 0x57ecf0 | message queue (4 × `time, flags, text`); read/write indices 0x57ece8/0x57ecec; current message 0x57ec90 (2 lines), time 0x57ece0, zoom 0x57ece4, flags 0x57ecd8 |
+| 0x574270 | ticks before the minecrawler flattens the town |
+| 0x574268 | level index (0–5 for levels 3–8); 0x57423e difficulty (0–2) |
+| 0x5742a4 | the HUD is drawn (0 in cutscenes) |
 
 ## Constants
 

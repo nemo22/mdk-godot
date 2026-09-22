@@ -6460,7 +6460,7 @@
    }
   ],
   "flow": "next",
-  "summary": "Queues the resource name (looked up by 0x415620) in the 4-entry display queue at 0x57ecf0 with flags and time (flags & 2 = insert at the front); most likely an on-screen message/picture.",
+  "summary": "Queues the resource name (looked up by 0x415620) in the 4-entry display queue at 0x57ecf0 with flags and time: an on-screen message in the big font (flags & 1 = grow and shrink, flags & 2 = insert at the front), see docs/gameplay.md (HUD).",
   "fields": [],
   "helpers": [
    "0x425400 hud_queue_message",

@@ -106,7 +106,7 @@ func _return(obj: MDKObject) -> int:
 func _value(obj: MDKObject, operand: Variant) -> float:
 	if operand is float:
 		return operand
-	return _variables(obj, operand[0])[clampi(operand[1], 0, 3)]
+	return _variables(obj, operand[0])[operand[1] if operand[1] >= 0 and operand[1] <= 3 else 0]
 
 
 ## Variables of a source: 0 global, 1 arena, 2 own, other = linked object.
@@ -262,6 +262,7 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			obj.death_script = o[0]
 		16:  # set_health
 			obj.health = o[0]
+			obj.max_health = o[0]
 			obj.indestructible = o[0] >= 65000
 			if o[0] == 0:
 				runtime.kill(obj)
@@ -575,6 +576,26 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			var inventory := runtime.kurt.inventory
 			var amount: int = inventory.super_chain_gun if o[0] == 0 else (inventory.ammo[o[0] - 1] if o[0] <= 5 else 0)
 			return _branch(obj, ins, _compare(amount, [o[1], o[2], o[3] if o[3] != null else 0.0]))
+
+		# The HUD.
+		247:  # hud_message: [flags, text name, seconds]
+			if runtime.messages:
+				runtime.messages.push(o[1], o[0], o[2])
+		181:  # boss_bar: the health bar shows a counter (mode 0) or an arena variable (mode 1)
+			var source: Array = o[0]
+			var state := runtime.get_arena_state(obj.arena)
+			var max_health := 0
+			var value := 0
+			match source[0]:
+				0:  # max − triangle group counter
+					max_health = source[2]
+					value = max_health - state.group_counters[(source[1] - 1) & 15]
+				1:  # the arena variable going from `high` (0) to `low` (max)
+					max_health = source[4]
+					var index: int = source[1] if source[1] <= 3 else 0
+					value = roundi((source[3] - state.variables[index]) / (source[3] - source[2]) * max_health)
+			if max_health > 0 and runtime.kurt.firing:
+				runtime.show_bar_values(mini(value, max_health), max_health)
 
 		# Triangle groups of the arena.
 		98:  # group_set_state

@@ -181,12 +181,12 @@ Layout at +0x302, jump (226):
 | 0x573a3c | player vertical speed |
 | 0x573b84 | object the player stands on |
 | 0x573a1c | its top z |
-| 0x573a38 | unknown flag (181, 209) |
+| 0x573a38 | Kurt fires (the fire key is held; 181, 209) |
 | 0x573c10 | triangle under the player |
 | 0x573c30 | player-related object pointer (171; excluded from blasts) |
 | 0x573b4c | f32[4] global script variables |
 | 0x573b68 | screen flash intensity (215) |
-| 0x573c74/0x573c78 | boss bar alpha / object |
+| 0x573c74/0x573c78 | health bar: seconds left / object |
 | 0x573c80..0x573c90 | pending teleport (arena, x, y, z, yaw) |
 | 0x574324 | player health |
 | 0x5742dc | 0/1 option set by cheat codes (232) |
