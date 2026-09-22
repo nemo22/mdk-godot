@@ -139,6 +139,20 @@ parameter in `obj+0x11f`:
 | 197 | | like 78, stopped when stuck |
 | 229 | `turn_and_jump_to_dest` | ballistic jump; ends after half the flight time (`obj+0x302`) once on the floor |
 
+`turn_and_jump_to_dest rate, action` (229, 0x460d24) turns the object towards its destination
+(`obj+0x120`) by at most `rate` degrees per second; once it faces it, the jump starts (command 229):
+the top is `max(z + 10, goal z + 30)` when jumping down, else `max(goal z + 10, z + 30)`;
+`vz = √(2 g (top − z))`, the flight time `t = (vz + √(vz² + 2 g (z − goal z))) / g` (`obj+0x302`, g =
+`obj+0x48`) and the horizontal speed `(friction × t² / 2 + distance) / t`, so the friction brings it
+down exactly. The action runs while command 229 is on. Grunts use it to leap to the waypoints of
+`pick_waypoint8`.
+
+**Rolling** (flag 0x40, `set_rolling` 85, `set_roll_radius` 169): when rolling starts, the rotation
+part of the object's matrix is saved (`obj+0x302`); from then on the object's matrix is that saved
+one times its scale, and every frame (0x4602c8) it's turned by `distance moved / (2π × radius)`
+turns (`obj+0x326`, 1 if ≤ 0) about the horizontal axis across the motion (built from two angles,
+0x46e170). The boulders of levels 4, 6 and 8 (`XCBOMB`, `XBO`).
+
 Walking and flying (43, 78, 197) go through a **waypoint** (`obj+0x12c`): `move_to` and
 `move_near_target` plan a detour around walls (`plan_move` 0x45a1dc) and the object heads for the
 waypoint, then the destination (`obj+0x120`).
@@ -534,6 +548,101 @@ Snake-like aliens: a head object with links hanging off it (level 3's flying bom
 - The port runs the cutscenes (state, which objects run and show, the camera) and goes on to the
   next level 5 s after the end; the full-screen strike, the videos, the break-up and the
   statistics aren't done yet.
+
+## Effects (the pool at `arena+0x5c`)
+
+A pool of 96 records (0x1aa bytes) shared by the arenas: sprites, particles and debris. When it's
+full, 0x405138 steals the effect of lowest priority in the arena (only below the requested one:
+wounds 50, trails 10, drops and bubbles 5, sparks 0). An effect has an update (returns 1 to be
+deleted) and a draw function, a 3×4 matrix (position at +0x20/+0x30/+0x40), a spin matrix applied
+every update (+0x44), velocity in units per tick (+0x18a), life in ticks (+0x196).
+
+- **Sprites** (0x407048): a screen-aligned quad of an animated texture, `width × scale / 256` units
+  wide (scale +0xa0), frame `F − 1 − (trunc(life × speed) mod F)` (speed +0xa4 in frames per tick),
+  so the animation plays forwards as the life runs out; index 0 is transparent. Textures (the same in
+  every level): `SL_BIG` (30 frames, 64×64, a green slime blob), `SL_MED`/`SL_SMA` (30 frames, 32/16
+  pixels, drops), `SB_MED`/`SB_SMA` (unused here), `BUBB` (6 frames), `BUBB_POP` (4), `TRAIL` (11,
+  smoke).
+- **Movement** (0x4061d8, drops and debris): `pos += v × ticks` with a collision sweep (0x407e2c);
+  without a hit `vz −= ticks × 0.284444 × 0.25` (about 64 units/s²); a hit puts the effect at the
+  contact, `v −= 1.4 (v·n) n` (bounce with restitution 0.4) and takes 20 ticks of life. Fans push
+  them (`updraft_query` with mask 8). At life ≤ 0 they're deleted.
+- **Wounds** (`attach_effect name, slot, towards`, 128, 0x4067b8, only with the effects detail
+  `0x5742dc` on): an `SL_BIG` sprite (scale 10: 2.5 units, speed 0.5: 15 fps, life `2F − 1`) kept in
+  `obj+0x160[slot]` at the object's reference point `slot`. Every frame (0x40690c) it loops; each
+  loop its intensity (from 0x7fff) drops by 128–255, and when no burst runs and `rand() <
+  intensity` a burst of 30 ticks starts with a jitter of ±0.25 per axis; during a burst every
+  update squirts a drop towards the reference point `towards` at `(direction + jitter) × 0.5` units
+  per tick, scale 4. `"OFF"` with `slot == towards` removes it (0x405250); the other names (the
+  wounded part) aren't used. The 8 slots are freed when the object dies or is removed. Used 184
+  times on aliens (`XG1_BODY 2→3`, `XG1_FOTL 1→7`…); `OFF 1,1` stops the leg wound.
+- **Drops** (0x406b3c): `SL_MED` or `SL_SMA` at random, speed 0.25, life `4F − 1` = 119 ticks, moved
+  as above. `spawn_debris count, v, spread, absolute, x, y, z, size` (136, 0x4484e3) spawns `count`
+  of them (only 1 with the detail off, none if `count ≤ 1`) at the point (+ the object's position
+  when `absolute` = 0) with `v` plus `±spread/2` in x and y and `−spread/16…+0.94 spread` in z, scale
+  `size + rand × 0.0005`: slime fountains and pipes in level 3's `HMO_2`/`HMO_3`, a gush in level 5.
+- **Bubbles** (`spawn_effect chance, slot, point`, 132, 0x406434): with probability `chance`% a
+  `BUBB` at the reference point `slot` (or the point when `slot` = 255), scale `10 ± 3.3`, speed 0.5,
+  life 64; every update `vz += 0.5 dt`, a random wobble of `±1.6 dt` in x and y and `scale += 4 dt`
+  (dt in seconds); it stops on a hit and then pops (`BUBB_POP`, life 7). `chance ≥ 150` would make
+  sparks (0x4052d4: small tetrahedra in the fire colours 0x30 + 0x10 × light), which no level uses.
+- The port draws the sprites as billboards (`MDKEffects`) and moves them every tick. A wound's blob
+  sits at the reference point of the model's rest pose ❓ (the original's hot points follow the
+  object's matrix, perhaps the animation too).
+
+## Shattered triangle groups (`shatter_group` 137–139, 0x40c828)
+
+Once taken for lighting (`light_group*`), these break a triangle group into flying pieces. 138 sets
+the point (`0x4d5374`) and a direction (`0x4d5358`), 139 the point with no direction, 137 reuses
+what the last one left; then `0x40c828(group, life, size, arena, speed)` (groups 1–255):
+
+- The direction is normalised; a zero one means a radial burst and is replaced by (0, 0, 1), so a
+  137 after a 139 blows the pieces straight up.
+- Each triangle is split at the middle of an edge until `|AB × CB|² ≤ size² / 4` (area ≤ size / 4),
+  with the UVs interpolated (0x40cbe0 flat, 0x40d014 textured).
+- Each piece becomes a double-sided effect (0x40564c, priority 25) with the original material:
+  `f = 1 − |centre − point|² / d²` (d = distance to the farthest corner of the group's box, axis by
+  axis), velocity `speed × f` along the direction or away from the point (up when at the point),
+  a spin of up to ±14° × f per update about each axis (0x46de70), life `round(life × 30)` ticks. They
+  move like the drops above and aren't lit.
+- When the pool runs out, the rest of the group makes no pieces.
+- The scripts hide the group themselves right after (`group_set_state g, 0`) and play sounds: ice
+  and walls blowing out in level 4 (`ICEXP1`, `EXPLODE`, then `hurt_kurt 10`), panels bursting in
+  level 3's `HMO_3`/`HMO_4`, big long-lived shatters in level 7.
+- The port builds the pieces into one mesh rebuilt every tick (`MDKDebris`, at most 600 pieces).
+
+## Shooting galleries (level 6)
+
+`OLYM_2` and `OLYM_4` have six `XBGUN` cannons firing along −y at a row of pop-up targets.
+
+- `if_gun_aim y, z, action` (219, 0x461024): the aim leads Kurt's sideways movement
+  (`(x − previous x) / dt`) by 1.67333 s, the flight time of the `XBG_B1` shot (300 units/s) in
+  `OLYM_2`, plus a jitter of ±0.25°; the gun can only aim within 270° ± 3°. It fires at Kurt when
+  aimed and `rand(70) < |vx| + 10`, else at one of up to 4 objects within 2 of `y` and 3 of `z`
+  (the raised targets) in its cone, else at Kurt when aimed; otherwise it faces 270° and fires 29% of
+  the time.
+- `place_x_near_player x_min, x_max, y_limit` (220, 0x460f00): a target rises at Kurt's x (25%),
+  at his x 2.67333 s later (50%) or at random (25%, and always when Kurt is outside the range or
+  beyond `y_limit`), at least 12 units from the other objects on exactly the same y. The target then
+  follows a path up (`TARGET` sound), waits 15 s and goes down again.
+
+## Camera tracking (`camera_track` 203, 0x4612e0)
+
+The camera pitch (`0x573918`, positive looks down) normally eases to the arena's rest pitch
+(`arena+0x462`) by `0.85 old + 0.15 new` per frame; `0x5739b0` = 1 makes `camera_update` skip that
+for a frame. `camera_track` (not in sniper mode) sets it and eases the pitch towards the object:
+the angle off Kurt's yaw `d` (folded to 0–180°), the height (mode 0: 70% of the way up the object's
+box, mode 1: `z + f × scale`); past 90° or below Kurt the goal is the rest pitch, otherwise
+`−atan2(height − Kurt z, distance) × (120 − d) / 120`, clamped to −30…rest. Level 7's `XU` boss and
+level 5's Gunter.
+
+## Guided mortar rounds (`bomb_follow_path` 28, 0x4635b0)
+
+`0x491ef0` is the sniper mode's mortar round (`SW_LGREN`, type 4) that just hit a triangle group
+(set in 0x462708 before the group hit script runs, never cleared). The opcode makes it follow a
+spline path (update 0x4634ac: absolute positions, life 99 until the last key, then 0 so it goes
+off, no collisions; the round's camera stays on Kurt's side). Level 7's `DANT_6` guides rounds that
+hit four wall groups down chutes onto four grunts. Not in the port yet: it needs sniper mode.
 
 ## Bullet holes (`special_130` 130, 0x45d140)
 

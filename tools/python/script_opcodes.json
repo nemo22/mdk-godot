@@ -549,7 +549,7 @@
    }
   ],
   "flow": "next",
-  "summary": "If the player projectile 0x491ef0 exists, has type 4 (+0xd0) and flag +0xf8 bit0 clear: it follows the spline path (callback 0x4634ac, +0xe0 = path, +0xe4 = 0) and the flag is set.",
+  "summary": "If the sniper mortar round 0x491ef0 (type 4, SW_LGREN, set when it hits a triangle group) isn't guided yet (+0xf8 bit 0): it follows the spline path (0x4634ac: absolute positions, life 99 until the last key, then 0 so it goes off; no collisions) and the flag is set. Level 7 DANT_6 guides rounds that hit 4 wall groups down onto grunts.",
   "fields": [
    "0x491ef0"
   ],
@@ -3031,11 +3031,11 @@
    },
    {
     "type": "u8",
-    "name": "kind"
+    "name": "towards"
    }
   ],
   "flow": "next",
-  "summary": "Only when effects detail 0x5742dc is on. name==\"OFF\" and slot==kind: removes the effect obj+0x160[slot] (0x405250). Otherwise, if obj+0x160[slot] is empty: obj+0x160[slot] = 0x4067b8(obj, position obj+0x1b0[slot], slot, kind). The name is only compared with \"OFF\".",
+  "summary": "Wound bleeding slime (0x4067b8, only with the effects detail 0x5742dc on): an SL_BIG blob at the reference point obj+0x1b0[slot] that squirts drops towards the reference point `towards`, kept in obj+0x160[slot]. name == \"OFF\" and slot == towards removes it (0x405250); otherwise the name (a part name) is unused. See engine.md, Effects.",
   "fields": [
    "obj+0x160",
    "obj+0x1b0"
@@ -3122,7 +3122,7 @@
    }
   ],
   "flow": "next",
-  "summary": "chance < 150: with probability chance% spawns effect 0x406434 at the position; chance >= 150: with probability (chance-150)% spawns effect 0x4052d4 (0.25, 0x30, 0x10) at the object's position + 5 in z (slot position unused).",
+  "summary": "chance < 150: with probability chance% a bubble (BUBB, 0x406434) at the reference point obj+0x1b0[slot], or at the point when slot = 255; chance >= 150 (unused): with probability (chance-150)% a spark (0x4052d4) at the object's position + 5 in z.",
   "fields": [
    "obj+0x1b0",
    "obj+0x60"
@@ -3243,11 +3243,11 @@
    },
    {
     "type": "f32",
-    "name": "life"
+    "name": "size"
    }
   ],
   "flow": "next",
-  "summary": "Spawns count particles (only 1 when effects detail 0x5742dc is off, none if count<=1): template 0x491eb4 with position (x,y,z) (+ object position if absolute==0), velocity (vx,vy,vz) + random*spread*2^-15 (z range biased upward), life = life + rand*0.0005.",
+  "summary": "Spawns count slime drops (0x406b3c; only 1 when the effects detail 0x5742dc is off, none if count <= 1) at (x, y, z) (+ the object's position if absolute == 0) with velocity (vx, vy, vz) units per tick + random spread (x, y: ±spread/2; z: -spread/16 to +0.94 spread) and scale size + rand*0.0005.",
   "fields": [
    "0x491ec0",
    "0x491ed0",
@@ -3261,27 +3261,27 @@
  },
  {
   "opcode": 137,
-  "mnemonic": "light_group",
+  "mnemonic": "shatter_group",
   "operands": [
    {
     "type": "u8",
-    "name": "tri_group"
+    "name": "group"
    },
    {
     "type": "f32",
-    "name": "a"
+    "name": "life"
    },
    {
     "type": "f32",
-    "name": "radius"
+    "name": "size"
    },
    {
     "type": "f32",
-    "name": "c"
+    "name": "speed"
    }
   ],
   "flow": "next",
-  "summary": "Relights the arena triangles of group tri_group with the light position/direction left in 0x4d5374/0x4d5358 by a previous opcode 138/139 (a -> 0x4d5370, radius^2*k -> 0x4d5354, c -> 0x4d5364).",
+  "summary": "Shatters triangle group `group` (1-255) into flying pieces (0x40c828) with the point/direction left by the previous 138/139 (after a 139 the direction is up): life in seconds, pieces split until their area is at most size/4, speed in units per tick (falling off to 0 at the group's farthest corner). Once thought to relight the group. See engine.md, Shattered triangle groups.",
   "fields": [
    "arena+0x10",
    "arena+0x28"
@@ -3293,35 +3293,35 @@
  },
  {
   "opcode": 138,
-  "mnemonic": "light_group_dir",
+  "mnemonic": "shatter_group_dir",
   "operands": [
    {
     "type": "u8",
-    "name": "tri_group"
+    "name": "group"
    },
    {
     "type": "f32",
-    "name": "a"
+    "name": "life"
    },
    {
     "type": "f32",
-    "name": "radius"
+    "name": "size"
    },
    {
     "type": "f32",
-    "name": "c"
+    "name": "speed"
    },
    {
     "type": "f32",
-    "name": "light_x"
+    "name": "x"
    },
    {
     "type": "f32",
-    "name": "light_y"
+    "name": "y"
    },
    {
     "type": "f32",
-    "name": "light_z"
+    "name": "z"
    },
    {
     "type": "f32",
@@ -3337,7 +3337,7 @@
    }
   ],
   "flow": "next",
-  "summary": "Sets the light position (0x4d5374..7c) and direction (0x4d5358..60, normalized; zero = omni) and relights triangle group tri_group.",
+  "summary": "Like 137, the pieces flying along the direction (dir_x, dir_y, dir_z; zero = away from the point) from the point (x, y, z) (0x4d5374, 0x4d5358).",
   "fields": [
    "arena+0x10",
    "arena+0x28"
@@ -3349,39 +3349,39 @@
  },
  {
   "opcode": 139,
-  "mnemonic": "light_group_point",
+  "mnemonic": "shatter_group_point",
   "operands": [
    {
     "type": "u8",
-    "name": "tri_group"
+    "name": "group"
    },
    {
     "type": "f32",
-    "name": "a"
+    "name": "life"
    },
    {
     "type": "f32",
-    "name": "radius"
+    "name": "size"
    },
    {
     "type": "f32",
-    "name": "c"
+    "name": "speed"
    },
    {
     "type": "f32",
-    "name": "light_x"
+    "name": "x"
    },
    {
     "type": "f32",
-    "name": "light_y"
+    "name": "y"
    },
    {
     "type": "f32",
-    "name": "light_z"
+    "name": "z"
    }
   ],
   "flow": "next",
-  "summary": "Like 138 with the direction zeroed (omni light at light_x/y/z).",
+  "summary": "Like 137, the pieces flying away from the point (x, y, z); leaves the direction straight up for a following 137.",
   "fields": [
    "arena+0x10",
    "arena+0x28"
@@ -5216,7 +5216,7 @@
    }
   ],
   "flow": "next",
-  "summary": "Moves global 0x573918 (probably the player's camera pitch) towards this object when the player faces it; mode 0 uses obj+0x1ac, mode 1 obj.z + factor*obj+0x58, limited by player-arena+0x462. Sets 0x5739b0 = 1.",
+  "summary": "Tilts the camera pitch (0x573918, 0x5739b0 = the script owns it this frame) towards the object while Kurt faces it (0x4612e0): mode 0 aims 70% up its bounding box, mode 1 at z + f*scale; target = -atan2(dz, dist)*(120-d)/120 with d the angle off Kurt's yaw (rest pitch past 90 degrees), clamped to [-30, rest], eased 0.85/0.15 per tick. Nothing in sniper mode.",
   "fields": [],
   "helpers": [
    "0x4612e0 camera_track_object"
@@ -5588,15 +5588,15 @@
  },
  {
   "opcode": 219,
-  "mnemonic": "if_check_461024",
+  "mnemonic": "if_gun_aim",
   "operands": [
    {
     "type": "f32",
-    "name": "a"
+    "name": "y"
    },
    {
     "type": "f32",
-    "name": "b"
+    "name": "z"
    },
    {
     "type": "complex",
@@ -5606,7 +5606,7 @@
    }
   ],
   "flow": "branch",
-  "summary": "Condition: helper 0x461024(obj, a, b) (uses the player's velocity, random numbers and other objects near y=a/z=b; exact meaning unclear).",
+  "summary": "Level 6's gallery guns (0x461024): aim along -y (270 ± 3 degrees) leading Kurt's sideways movement by 1.67333 s, or at a raised target (objects within 2 of y and 3 of z in the cone), setting the yaw; true when it should fire (always when aimed, else 29%). See engine.md, Shooting galleries.",
   "fields": [
    "obj+0x108",
    "obj+0x248",
@@ -5638,7 +5638,7 @@
    }
   ],
   "flow": "next",
-  "summary": "Sets obj.x (obj+0x10) to a random or player-predicted x in [x_min, x_max] (uses the player's x and speed when he is inside the range), avoiding other objects on the same y.",
+  "summary": "Level 6's pop-up targets (0x460f00): obj.x = Kurt's x (25%), his x 2.67333 s ahead (50%) or random in [x_min, x_max] (25%, or always when Kurt's x is outside it or his y > y_limit); below x_min wraps by the range; moved to 12 below any object on exactly the same y closer than 11.5.",
   "fields": [
    "obj+0x10"
   ],

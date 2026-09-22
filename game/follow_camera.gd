@@ -54,7 +54,9 @@ func _process(delta: float) -> void:
 		return
 	var feet := target.get_global_transform_interpolated().origin
 	# The arena pitch eases towards the pitch of the arena Kurt is in (0.85·old + 0.15·new per tick).
-	arena_pitch = lerpf(level.get_camera_pitch(feet), arena_pitch, pow(0.85, delta * 30.0))
+	# `camera_track` (opcode 203) makes the pitch ease towards its own goal instead.
+	var goal := scripts.camera_track_pitch if scripts and scripts.camera_track_ticks > 0 else level.get_camera_pitch(feet)
+	arena_pitch = lerpf(goal, arena_pitch, pow(0.85, delta * 30.0))
 	if target.is_on_floor():
 		air_time = 0.0
 		air_pitch = move_toward(air_pitch, 0.0, AIR_PITCH_DECAY * delta)

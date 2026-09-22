@@ -236,6 +236,13 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 		# Spawning.
 		86, 161:  # spawn, spawn_flagged
 			runtime.spawn(obj, o[3], Vector3(o[0], o[1], o[2]), 0.0, -1, o[4], ins.opcode == 161)
+		206:  # spawn_along_path: [path, step, type, script]: one object every `step` along the path
+			# (from time 0 to before its last key), flagged like `spawn_flagged` (0x2008a6)
+			var end := runtime.motion.path_key_frame(o[0], runtime.motion.path_key_count(o[0]) - 1)
+			var time := 0.0
+			while time < end:
+				runtime.spawn(obj, o[2], runtime.motion.path_position(o[0], time), 0.0, -1, o[3], true)
+				time += o[1]
 		230:  # spawn_ex
 			runtime.spawn(obj, o[5], Vector3(o[0], o[1], o[2]), o[3], o[4], o[6], false)
 		113:  # spawn_relative
@@ -607,6 +614,56 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 
 		131:  # special_event: cutscenes and the end of the level
 			runtime.special_event(obj, o[0])
+
+		85:  # set_rolling
+			obj.set_rolling(o[0] != 0)
+		169:  # set_roll_radius
+			obj.roll_radius = _value(obj, o[0])
+
+		137, 138, 139:  # shatter_group: [group, life, size, speed(, point(, direction))]
+			# 138 sets the point and direction, 139 the point (pieces fly away from it), 137 reuses them.
+			if ins.opcode == 138:
+				runtime.shatter_point = Vector3(o[4], o[5], o[6])
+				runtime.shatter_direction = Vector3(o[7], o[8], o[9])
+			elif ins.opcode == 139:
+				runtime.shatter_point = Vector3(o[4], o[5], o[6])
+				runtime.shatter_direction = Vector3.ZERO
+			if o[0] >= 1 and o[0] <= 255:
+				runtime.debris.shatter(obj.arena, o[0], o[1], o[2], o[3], runtime.shatter_point, runtime.shatter_direction)
+			if runtime.shatter_direction == Vector3.ZERO:
+				# A radial burst leaves the direction straight up for the next 137 (0x40c828).
+				runtime.shatter_direction = Vector3(0.0, 0.0, 1.0)
+
+		128:  # attach_effect: [name, point, second point]: a wound bleeding slime at a reference point
+			# (only with the effects detail on); "OFF" with the same point twice stops it
+			if o[0] == "OFF" and o[1] == o[2]:
+				runtime.effects.detach(obj, o[1])
+			elif runtime.option:
+				runtime.effects.attach(obj, o[1], o[2])
+		132:  # spawn_effect: [chance, reference point or 255, point]: a bubble now and then
+			# (chance ≥ 150 would make sparks, which no level uses)
+			if o[0] < 150 and randi() % 100 < o[0]:
+				var point: Vector3 = obj.get_reference_point(o[1]) if o[1] != 255 else Vector3(o[2][0], o[2][1], o[2][2])
+				runtime.effects.spawn_bubble(obj.arena, point)
+		136:  # spawn_debris: [count, velocity, spread, absolute, point, size]: slime drops
+			var count: int = o[0] if runtime.option else mini(o[0], 1) if o[0] > 1 else 0
+			var origin := Vector3(o[6], o[7], o[8]) + (obj.mdk_position if o[5] == 0 else Vector3.ZERO)
+			for i in count:
+				var velocity := Vector3(o[1] + (randi() % 32768 - 0x4000) * o[4] / 32768.0,
+						o[2] + (randi() % 32768 - 0x4000) * o[4] / 32768.0, o[3] + (randi() % 32768 - 0x800) * o[4] / 32768.0)
+				runtime.effects.spawn_drop(obj.arena, origin, velocity, o[9] + (randi() % 32768) * 0.0005)
+
+		219:  # if_gun_aim: [target row y, z, action]
+			return _branch(obj, ins, runtime.gun_aim(obj, o[0], o[1]))
+		220:  # place_x_near_player: [x min, x max, y limit]
+			runtime.place_near_kurt(obj, o[0], o[1], o[2])
+		203:  # camera_track: [[mode(, height)]] (nothing in sniper mode, which the port doesn't have yet)
+			var track: Array = o[0]
+			runtime.camera_track(obj, track[0], track[1] if track.size() > 1 else 0.0)
+
+		229:  # turn_and_jump_to_dest: [turn rate, action while jumping]
+			runtime.motion.turn_and_jump(obj, o[0])
+			return _branch(obj, ins, obj.move_command == 229)
 
 		226:  # jump_to: [pivot x, y, z, angular speed, gain], starts swinging below the pivot
 			obj.swing_pivot = Vector3(o[0], o[1], o[2])

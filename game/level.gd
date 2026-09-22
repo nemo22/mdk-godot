@@ -157,6 +157,28 @@ func get_group_centers(arena_name: String, group_number: int) -> PackedVector3Ar
 	return group.centers
 
 
+## The triangles of a group, for `MDKDebris`: `[corners (MDK), UVs (scaled for the material),
+## material]` for each triangle that has a material.
+func get_group_triangles(arena_name: String, group_number: int) -> Array:
+	var group: TriangleGroup = arena_groups.get(arena_name, {}).get(group_number)
+	var result := []
+	if not group or group_number == 0:
+		return result
+	var arena: MDKArena = _arenas[arena_name]
+	for tri in group.triangles:
+		var material := _resolvers[arena_name].get_material(arena.triangle_materials[tri], arena.materials) as Material
+		if not material:
+			continue
+		var uv_scale: Vector2 = material.get_meta(&"uv_scale", Vector2.ZERO)
+		var corners := PackedVector3Array()
+		var uvs := PackedVector2Array()
+		for k in 3:
+			corners.push_back(arena.vertices[arena.triangle_indices[tri * 3 + k]])
+			uvs.push_back(arena.triangle_uvs[tri * 3 + k] * uv_scale)
+		result.push_back([corners, uvs, material])
+	return result
+
+
 ## Gives every triangle of a group the material `value` (`group_set_texture`).
 func set_group_texture(arena_name: String, group_number: int, value: int) -> void:
 	var group: TriangleGroup = arena_groups.get(arena_name, {}).get(group_number)

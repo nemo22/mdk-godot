@@ -82,8 +82,8 @@ conditions such as `if_anim_done` test their state. See [engine.md](engine.md#ob
 - [`MDKScriptVM`](../game/scripts/script_vm.gd) runs a frame of an object's script like
   `script_run`. Opcodes that aren't implemented yet are still decoded (so scripts never lose sync)
   and their conditions are false; `--profile` lists the ones that were hit. The levels use 236
-  opcodes; 16 aren't implemented yet (one of them, 141, has no handler in the original either),
-  mostly effects (`attach_effect`, lights, debris), rolling objects and bullet holes (130). `tools/python/opcode_coverage.py` lists them and
+  opcodes; 3 aren't implemented: `bomb_follow_path` (28, needs sniper mode), bullet holes (130)
+  and 141, which has no handler in the original either. `tools/python/opcode_coverage.py` lists them and
   `tools/python/find_opcode.py` shows where the levels use an opcode.
 - Each object's target is chosen when its script runs (`script_run`): Kurt, or the walking decoy
   (`0x573c20`), or the aliens' target set by `set_target_mode` 1 (`0x491e48`), unless the object has
@@ -137,6 +137,13 @@ conditions such as `if_anim_done` test their state. See [engine.md](engine.md#ob
 - `jump_to` (226) and `set_2d0_block` (242): see [engine.md](engine.md#swinging-objects-and-ropes);
   `special_event` (131): [engine.md](engine.md#cutscenes-special_event-131); `special_130` (130):
   [engine.md](engine.md#bullet-holes-special_130-130-0x45d140).
+- `light_group*` (137–139) turned out to shatter triangle groups (renamed `shatter_group*`), see
+  [engine.md](engine.md#shattered-triangle-groups-shatter_group-137139-0x40c828); 128/132/136 are
+  the slime wounds, bubbles and drops of [Effects](engine.md#effects-the-pool-at-arena0x5c).
+- 219 (renamed `if_gun_aim`) and 220 run level 6's
+  [shooting galleries](engine.md#shooting-galleries-level-6).
+- The disassembler prints jump targets and path offsets 4 below the real addresses (relative to
+  offset 4 of the file); add 4 to find them in a hex dump.
 - The alarm (movement command 15) plays `ALERT` every 32 frames and keeps `0x573aec` at 10 ticks
   (`if_alarm`).
 

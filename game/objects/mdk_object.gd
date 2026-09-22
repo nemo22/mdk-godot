@@ -170,6 +170,13 @@ var thrown_kind := 0
 var item_ticks := 0
 ## Blasts farther than this don't hurt the object (`obj+0x2c4`, opcode 177).
 var blast_range := 1000.0
+## Bleeding wounds by reference point (`obj+0x160`, `MDKEffects.Effect`).
+var wounds := {}
+## Rolling objects (flag 0x40, `set_rolling` 85): the orientation saved when rolling started
+## (`obj+0x302`, Godot space, without the scale), turned as the object rolls, and the radius
+## (`obj+0x326`, `set_roll_radius` 169; 0 or less counts as 1).
+var rolling_basis := Basis()
+var roll_radius := 0.0
 ## Swinging (opcode 226): pivot (`obj+0x1c`), angular speed (`obj+0x302`), gain (`obj+0x30a`),
 ## rope length (`obj+0x306`) and the yaw the swing plane turns towards (`obj+0x30e`).
 var swing_pivot := Vector3()
@@ -252,8 +259,25 @@ func update_transform() -> void:
 	position = MDKMeshBuilder.to_godot(mdk_position)
 	# Model space is MDK space: yaw turns around Z (MDK) = Y (Godot), pitch raises the nose (+X
 	# towards +Z) and roll turns around the forward axis.
-	basis = Basis(Vector3.UP, deg_to_rad(yaw)) * Basis(Vector3.BACK, deg_to_rad(pitch)) \
-			* Basis(Vector3.RIGHT, deg_to_rad(roll)) * Basis.from_scale(Vector3.ONE * model_scale)
+	if flags & FLAG_ROLLING:
+		basis = rolling_basis * Basis.from_scale(Vector3.ONE * model_scale)
+		return
+	basis = get_rotation_basis() * Basis.from_scale(Vector3.ONE * model_scale)
+
+
+## The orientation from the yaw, pitch and roll (Godot space).
+func get_rotation_basis() -> Basis:
+	return Basis(Vector3.UP, deg_to_rad(yaw)) * Basis(Vector3.BACK, deg_to_rad(pitch)) \
+			* Basis(Vector3.RIGHT, deg_to_rad(roll))
+
+
+## Starts or stops rolling (`set_rolling`, opcode 85).
+func set_rolling(on: bool) -> void:
+	if not on:
+		flags &= ~FLAG_ROLLING
+	elif not flags & FLAG_ROLLING:
+		flags |= FLAG_ROLLING
+		rolling_basis = get_rotation_basis()
 
 
 ## Starts an animation (`anim_loop` / `anim_once`). Restarting the current animation does nothing

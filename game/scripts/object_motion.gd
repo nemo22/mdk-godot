@@ -65,6 +65,8 @@ func update(obj: MDKObject) -> void:
 	if not obj.frame_sound.is_empty() and obj.animation and time < obj.frame_sound_frame 			and obj.frame_sound_frame <= time + dt * obj.animation_fps * obj.animation.speed:
 		runtime.play_sound(obj, obj.frame_sound, 0, null)
 		obj.frame_sound = ""
+	if obj.flags & MDKObject.FLAG_ROLLING:
+		_roll(obj)
 	obj.previous_position = obj.mdk_position
 	obj.update_transform()
 	obj.update_body()
@@ -225,6 +227,45 @@ func _update_command(obj: MDKObject) -> void:
 			if obj.parameter_timer >= obj.parameter * 0.5 and obj.contact_flags & MDKObject.CONTACT_FLOOR:
 				obj.move_command = 0
 				obj.velocity = Vector3.ZERO
+
+
+## Rolling (0x4602c8): the object turns by `distance / (2π × radius)` turns about the horizontal
+## axis across its motion (the original builds the turn from two angles, which is close to this).
+func _roll(obj: MDKObject) -> void:
+	var moved := Vector2(obj.mdk_position.x - obj.previous_position.x, obj.mdk_position.y - obj.previous_position.y)
+	var distance := moved.length()
+	if distance <= 0.0:
+		return
+	var radius := obj.roll_radius if obj.roll_radius > 0.0 else 1.0
+	var axis := MDKMeshBuilder.to_godot(Vector3(-moved.y, moved.x, 0.0) / distance)
+	obj.rolling_basis = (Basis(axis, distance / radius) * obj.rolling_basis).orthonormalized()
+
+
+## `turn_and_jump_to_dest` (opcode 229, 0x460d24): turns towards the destination by at most
+## `rate` degrees per second; once facing it, jumps there (movement command 229). The top of the
+## jump is 10 above the higher end and at least 30 above the lower one; the flight time allows for
+## the friction slowing the object down.
+func turn_and_jump(obj: MDKObject, rate: float) -> void:
+	var heading := obj.yaw_to(obj.move_destination)
+	var diff := wrapf(heading - obj.yaw, -180.0, 180.0)
+	if absf(diff) > rate * dt:
+		obj.yaw = fposmod(obj.yaw + signf(diff) * rate * dt, 360.0)
+		return
+	obj.yaw = heading
+	obj.move_command = 229
+	var z := obj.mdk_position.z
+	var goal := obj.move_destination.z
+	var top := maxf(z + 10.0, goal + 30.0) if goal < z else maxf(goal + 10.0, z + 30.0)
+	var g := obj.gravity
+	var up := sqrt((top - z) * 2.0 * g)
+	var time := (up + sqrt(maxf(up * up + (z - goal) * g * 2.0, 0.0))) / g
+	obj.parameter = time
+	obj.parameter_timer = 0.0
+	var offset := Vector2(obj.move_destination.x - obj.mdk_position.x, obj.move_destination.y - obj.mdk_position.y)
+	var distance := offset.length()
+	var speed := (obj.friction * 0.5 * time * time + distance) / time
+	var direction := offset / distance if distance > 0.0 else Vector2.ZERO
+	obj.velocity = Vector3(direction.x * speed, direction.y * speed, up)
 
 
 ## A chain link (movement command 30, `spawn_chain`): the links hang off the head object, each

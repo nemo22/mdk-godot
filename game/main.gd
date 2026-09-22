@@ -17,6 +17,8 @@
 ##   --no-scripts              Don't run the level scripts (no objects or aliens).
 ##   --town=seconds            The minecrawler flattens the town after this long (for tests).
 ##   --spawn-box=TEXTURE       Create a `spawn_box` object showing that texture in front of Kurt.
+##   --fx                      Spawn slime drops and bubbles in front of Kurt (effects test).
+##   --shatter=GROUP           Shatter a triangle group of Kurt's arena (`shatter_group` test).
 ##   --event=N                 Run `special_event` N after the delay (cutscenes, end of level).
 extends Node3D
 
@@ -67,6 +69,13 @@ func _ready() -> void:
 		scripts.level_ended.connect(_on_level_ended)
 		if args.has("town"):
 			scripts.town_ticks = roundi(float(args.town) * 30.0)
+		if args.has("shatter"):
+			var arena_name := level.get_arena_at(kurt.global_position)
+			var centers := level.get_group_centers(arena_name, int(args.shatter))
+			if not centers.is_empty():
+				level.set_group_state(arena_name, int(args.shatter), 0)
+				scripts.debris.shatter(arena_name, int(args.shatter), 3.0, 50.0, 3.0, centers[0], Vector3.ZERO)
+				print("shatter group %s at %s" % [args.shatter, centers[0]])
 		if args.has("spawn-box"):
 			var facing := MDKScriptRuntime.to_mdk(kurt.get_facing())
 			var point := MDKScriptRuntime.to_mdk(kurt.global_position) + facing * 20.0 + Vector3(0, 0, 5)
@@ -78,6 +87,16 @@ func _ready() -> void:
 		Input.action_press(&"fire")
 	if args.has("delay"):
 		await get_tree().create_timer(float(args.delay)).timeout
+	if args.has("fx"):
+		var ahead := MDKScriptRuntime.to_mdk(kurt.global_position + kurt.get_facing() * 25.0)
+		var arena_name := level.get_arena_at(kurt.global_position)
+		for i in 16:
+			scripts.effects.spawn_drop(arena_name, ahead + Vector3(0, 0, 5), Vector3(randf_range(-0.3, 0.3), randf_range(-0.3, 0.3), 1.5), 16.0)
+		for i in 3:
+			scripts.effects.spawn_bubble(arena_name, ahead + Vector3(i * 4 - 4, 0, 2))
+		var alien := scripts.find_object_named("XG")
+		if alien:
+			scripts.effects.attach(alien, 2, 3)
 	if args.has("event"):
 		scripts.special_event(scripts.get_arena_state(scripts.current_arena).controller, int(args.event))
 	if args.has("use"):
@@ -149,6 +168,7 @@ func _profile(seconds: float) -> void:
 			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), scripts.average_tick_ms()])
 	if scripts.vm:
 		print("unimplemented opcodes (opcode: count): ", scripts.vm.unimplemented)
+		print("effects %d, debris pieces %d" % [scripts.effects.get_child_count(), scripts.debris.piece_count()])
 		for obj in scripts.objects:
 			print("  %s_%d %s %s yaw %d move %d path %d anim %s frame %d speed %.1f health %d flags %x%s" % [
 					obj.type_name, obj.instance_id, obj.arena, obj.mdk_position.round(), obj.yaw, obj.move_command,

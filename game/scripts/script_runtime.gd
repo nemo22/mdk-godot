@@ -52,6 +52,12 @@ var level: Level
 var kurt: Kurt
 var vm: MDKScriptVM
 var motion: MDKObjectMotion
+## Sprite effects (wounds, drops, bubbles) and shattered triangle groups.
+var effects: MDKEffects
+var debris: MDKDebris
+## The point and direction of the last `shatter_group` (0x4d5374, 0x4d5358).
+var shatter_point := Vector3()
+var shatter_direction := Vector3(0.0, 0.0, 1.0)
 var behaviors: MDKObjectBehaviors
 var items: MDKItems
 var fans: MDKFans
@@ -119,6 +125,12 @@ var _animations := {}
 var _resolvers := {}
 var _next_instance := 1000
 var _previous_kurt_position := Vector3()
+## Kurt's velocity in units per second, measured over the last tick.
+var kurt_velocity := Vector3()
+## `camera_track` (opcode 203): the camera pitch the scripts want (`0x573918`), for this many more
+## ticks (`0x5739b0`).
+var camera_track_pitch := 0.0
+var camera_track_ticks := 0
 var _time := 0.0
 var _tick_usec := 0
 var _tick_count := 0
@@ -134,6 +146,12 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	behaviors = MDKObjectBehaviors.new(self)
 	items = MDKItems.new(self)
 	fans = MDKFans.new(self)
+	effects = MDKEffects.new()
+	effects.runtime = self
+	add_child(effects)
+	debris = MDKDebris.new()
+	debris.level = level
+	add_child(debris)
 	kurt.updraft = func(vz: float, dt: float) -> float:
 		return fans.query(current_arena, to_mdk(kurt.global_position), vz, MDKFans.MASK_KURT, dt)
 	kurt.item_used.connect(items.use_item)
@@ -243,6 +261,7 @@ func _tick() -> void:
 		_cutscene_tick()
 		return
 	alarm_ticks = maxi(alarm_ticks - 1, 0)
+	camera_track_ticks = maxi(camera_track_ticks - 1, 0)
 	_update_bar()
 	if town_ticks > 0:
 		town_ticks -= 1
@@ -258,12 +277,15 @@ func _tick() -> void:
 	# Kurt moves and takes pickups, then fires, then the objects run (`game_frame`).
 	if _tick_count > 0:
 		collect_pickups()
+	kurt_velocity = (kurt_position - _previous_kurt_position) * 30.0
 	_previous_kurt_position = kurt_position
 	if kurt.firing:
 		fire_chain_gun()
 	if not current_arena.is_empty():
 		vm.run(get_arena_state(current_arena).controller)
 	items.update_twisters()
+	effects.update(1.0)
+	debris.update(1.0)
 	# Only the objects of Kurt's arena are updated (0x43c7dc; the original also updates the arena
 	# seen through an open door).
 	for obj in objects.duplicate():
@@ -324,6 +346,84 @@ func special_event(obj: MDKObject, event: int) -> void:
 			_start_cutscene(CUTSCENE_BOSS, obj)
 			camera_mode = 12
 			camera_position = Vector3(1158.0, 5006.0, 315.0)
+
+
+## The shooting galleries' guns (`if_gun_aim` 219, 0x461024) of level 6: they only fire along −y
+## (270° ± 3°) and lead Kurt by the 1.67 s their shot takes (sideways only). Faster sideways
+## movement makes them likelier to fire at him; otherwise they aim at a raised target (objects within
+## 2 of `y` and 3 of `z` in their cone), then at Kurt anyway, and else face 270° and fire 29% of the
+## time. Sets the yaw; returns whether to fire.
+func gun_aim(obj: MDKObject, y: float, z: float) -> bool:
+	var lead := Vector3(kurt_position.x + kurt_velocity.x * 1.67333, kurt_position.y, 0.0)
+	var angle := obj.yaw_to(lead) + randi() % 500 * 0.001 - 0.25
+	var aimed := absf(angle - 270.0) <= 3.0
+	if aimed and randi() % 70 < roundi(absf(kurt_velocity.x)) + 10:
+		obj.yaw = angle
+		return true
+	var angles: Array[float] = []
+	for other in objects:
+		if other.dead or other.arena != obj.arena or absf(other.mdk_position.y - y) > 2.0 or absf(other.mdk_position.z - z) > 3.0:
+			continue
+		var other_angle := obj.yaw_to(other.mdk_position)
+		if absf(other_angle - 270.0) <= 3.0:
+			angles.push_back(other_angle)
+			if angles.size() == 4:
+				break
+	if not angles.is_empty():
+		obj.yaw = angles[randi() % angles.size()]
+		return true
+	if aimed:
+		obj.yaw = angle
+		return true
+	obj.yaw = 270.0
+	return randi() % 100 > 70
+
+
+## `place_x_near_player` (220, 0x460f00): the level 6 pop-up targets rise at Kurt's x (25%), where he
+## will be 2.67 s later (50%) or at random (25%, or always when he's outside `x_min…x_max` or past
+## `y_limit`), at least 12 units from other objects on the same y.
+func place_near_kurt(obj: MDKObject, x_min: float, x_max: float, y_limit: float) -> void:
+	var r := randi() % 100
+	var x: float
+	if r < 25 or kurt_position.x < x_min or kurt_position.x > x_max or kurt_position.y > y_limit:
+		x = x_min + (x_max - x_min) * (randi() % 10000) * 0.0001
+	elif r < 50:
+		x = kurt_position.x
+	else:
+		x = kurt_position.x + kurt_velocity.x * 2.67333
+	if x < x_min:
+		x += x_max - x_min
+	for i in 100:
+		var moved := false
+		for other in objects:
+			if other != obj and not other.dead and other.arena == obj.arena and other.mdk_position.y == obj.mdk_position.y \
+					and absf(x - other.mdk_position.x) < 11.5:
+				x = other.mdk_position.x - 12.0
+				moved = true
+		if not moved:
+			break
+	obj.mdk_position.x = x
+
+
+## `camera_track` (203, 0x4612e0): tilts the camera up towards a tall object (level 7's `XU`, level
+## 5's Gunter) while Kurt faces it, less the more he turns away (none past 90°), at most 30° up,
+## easing by 15% per tick. Mode 0 looks 70% of the way up the object, mode 1 at `height × scale`
+## above its origin.
+func camera_track(obj: MDKObject, mode: int, height: float) -> void:
+	var off := fposmod(kurt_yaw - rad_to_deg(atan2(obj.mdk_position.y - kurt_position.y, obj.mdk_position.x - kurt_position.x)), 360.0)
+	if off > 180.0:
+		off = 360.0 - off
+	var top := obj.mdk_position.z + height * obj.model_scale
+	if mode == 0:
+		var bounds_top := obj.mdk_position.z + (obj.model.bounds.end.z * obj.model_scale if obj.model else 0.0)
+		top = 0.3 * obj.mdk_position.z + 0.7 * bounds_top
+	var rest := level.get_camera_pitch(kurt.global_position)
+	var target := rest
+	if off <= 90.0 and top >= kurt_position.z:
+		var distance := Vector2(obj.mdk_position.x - kurt_position.x, obj.mdk_position.y - kurt_position.y).length()
+		target = clampf(-rad_to_deg(atan2(top - kurt_position.z, distance)) * (120.0 - off) / 120.0, -30.0, rest)
+	camera_track_pitch = target
+	camera_track_ticks = 2
 
 
 ## The first active object of a type (the cutscenes' targets).
@@ -470,7 +570,7 @@ func spawn(parent: MDKObject, type_name: String, mdk_position: Vector3, yaw: flo
 		return null
 	var obj := MDKObject.new()
 	obj.arena = parent.arena
-	obj.setup(type_name, model, _get_resolver(parent.arena))
+	obj.setup(type_name, model, get_resolver(parent.arena))
 	obj.instance_id = instance if instance >= 0 else _next_instance
 	if instance < 0:
 		_next_instance += 1
@@ -510,7 +610,7 @@ func spawn_box(parent: MDKObject, mdk_position: Vector3, size: Vector3, texture_
 	model.bounds = part.bounds
 	var obj := MDKObject.new()
 	obj.arena = parent.arena
-	var resolver := _get_resolver(parent.arena)
+	var resolver := get_resolver(parent.arena)
 	obj.setup(texture_name, model, resolver)
 	obj.instance_id = _next_instance
 	_next_instance += 1
@@ -592,7 +692,7 @@ func spawn_explosion(arena_name: String, center: Vector3, scale: float, yaw := 0
 		return null
 	effect.flags |= MDKObject.FLAG_NOT_TARGET | MDKObject.FLAG_NOT_SOLID_2
 	effect.effect_frames = 26
-	var texture := _get_resolver(arena_name).find_texture(effect.model.materials[0]) if not effect.model.materials.is_empty() else null
+	var texture := get_resolver(arena_name).find_texture(effect.model.materials[0]) if not effect.model.materials.is_empty() else null
 	if texture:
 		effect.effect_frames = texture.frame_count
 	effect.model_scale = scale
@@ -1324,7 +1424,8 @@ func _find_model(arena_name: String, type_name: String) -> MDKModel:
 	return null
 
 
-func _get_resolver(arena_name: String) -> MDKMeshBuilder.MaterialResolver:
+## The materials and palette of an arena.
+func get_resolver(arena_name: String) -> MDKMeshBuilder.MaterialResolver:
 	if not _resolvers.has(arena_name):
 		var arena := level.mto.get_arena(arena_name) if level.mto.arena_offsets.has(arena_name) else null
 		var palette := level.dti.palette.with_arena_colors(arena.palette_rgb) if arena else level.dti.palette
