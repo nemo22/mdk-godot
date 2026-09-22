@@ -1,23 +1,26 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://game/level_viewer.gd" id="1_viewer"]
-[ext_resource type="Script" path="res://game/free_camera.gd" id="2_camera"]
+[ext_resource type="Script" path="res://game/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://game/level.gd" id="2_level"]
+[ext_resource type="PackedScene" path="res://game/kurt/kurt.tscn" id="3_kurt"]
+[ext_resource type="PackedScene" path="res://game/follow_camera.tscn" id="4_camera"]
 
-[node name="LevelViewer" type="Node3D"]
-script = ExtResource("1_viewer")
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
 
-[node name="Camera" type="Camera3D" parent="."]
-physics_interpolation_mode = 2
-fov = 70.0
-near = 0.5
-far = 20000.0
-script = ExtResource("2_camera")
+[node name="Level" type="Node3D" parent="."]
+script = ExtResource("2_level")
+
+[node name="Kurt" parent="." instance=ExtResource("3_kurt")]
+
+[node name="FollowCamera" parent="." node_paths=PackedStringArray("target", "level") instance=ExtResource("4_camera")]
+target = NodePath("../Kurt")
+level = NodePath("../Level")
 
 [node name="Info" type="Label" parent="."]
 offset_left = 8.0
 offset_top = 8.0
 offset_right = 632.0
-offset_bottom = 80.0
+offset_bottom = 40.0
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 4
-text = "Loading…"

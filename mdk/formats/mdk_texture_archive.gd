@@ -4,20 +4,19 @@
 ##   char[12] name, u32 size, u32 count, then per entry:
 ##   char[8] name, u32 kind, u32 value, f32 ?, u32 offset
 ## `kind` is 0xFFFFFFFF for a palette color (`value` is the palette index, values ≥ 256 are special
-## materials, see `MDKMaterials`), 0x10000/0x10001 for an animated sprite (❓ not parsed yet), and
-## texture flags otherwise (0, or 2 for some floors ❓).
+## materials, see `MDKMeshBuilder`). If its high 16 bits are set (0x10000, 0x10001, 0x20000), the entry
+## is an animated texture (see `MDKTexture.parse_animated()`). Otherwise it's a texture, and `kind`
+## holds flags (0, or 2 for some floors ❓).
 class_name MDKTextureArchive
 extends RefCounted
 
 const KIND_COLOR := 0xFFFFFFFF
-const KIND_SPRITE_MASK := 0xFFFF0000
+const KIND_ANIMATED_MASK := 0xFFFF0000
 
-## Name to MDKTexture.
+## Name to MDKTexture (including animated textures).
 var textures := {}
 ## Name to palette index (or special value ≥ 256).
 var colors := {}
-## Names of animated sprites (not parsed yet).
-var sprites: Array[String] = []
 
 
 static func parse(bytes: PackedByteArray, base: int) -> MDKTextureArchive:
@@ -32,8 +31,8 @@ static func parse(bytes: PackedByteArray, base: int) -> MDKTextureArchive:
 		var offset := r.u32()
 		if kind == KIND_COLOR:
 			archive.colors[entry_name] = value
-		elif kind & KIND_SPRITE_MASK:
-			archive.sprites.push_back(entry_name)
+		elif kind & KIND_ANIMATED_MASK:
+			archive.textures[entry_name] = MDKTexture.parse_animated(entry_name, bytes, base + offset)
 		else:
 			archive.textures[entry_name] = MDKTexture.parse(entry_name, bytes, base + offset)
 	return archive

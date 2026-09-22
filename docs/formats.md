@@ -68,7 +68,8 @@ Index 0 is forced to black and is transparent in sprites. Sprites (`BNI`) only u
 
 ### Block 2: arenas and corridors 🟡
 
-`u32 count`, then 16-byte entries: `char[8] name, u32 records offset, f32 ?`.
+`u32 count`, then 16-byte entries: `char[8] name, u32 records offset, f32 camera pitch` ✅ (degrees,
+positive looks down; usually 4, see [gameplay.md](gameplay.md#camera-camera_update)).
 Names are `HMO_1`… (arenas) and `CHMO_1`… (corridors) in level 3; other levels use other prefixes
 (`MEAT_n`, `OLYM_n`, `DANT_n`, …). Names not starting with `C` get flags `|= 3` in the game.
 
@@ -106,14 +107,60 @@ Offsets below are relative to that buffer:
 | 0x0C | u32 | Size of the texture archive |
 | 0x10 | | Texture archive `HMO_n.MAT` (see below) ✅ |
 
-### Models section 🟡
+### Models section ✅
 
-`u32 size`, then `u32 animation count, u32 model count, u32 sound count` and directories of
-`char[8] name, u32 offset` (offsets relative to the counts). At most 16 sounds.
+Offsets are relative to `base`, right after the section's `u32 size`:
+`u32 animation count, u32 model count, u32 sound count`, then animation and model entries
+(`char[8] name, u32 offset`, 12 bytes each), then 24-byte sound entries (`char[12] name, u16 ?,
+u16 ?, u32 offset, u32 length`, like SNI entries, pointing to RIFF WAV files; at most 16).
+A reference decoder is in [`tools/python/mdk_models.py`](../tools/python/mdk_models.py).
 
-Model: `u32 flags, u32 material count`, `char[16]` material names, `u32 vertex count`,
-vertices (`f32 x, y, z`), `u32 triangle count`, 36-byte triangles (same layout as world triangles,
-but UVs are normalized 0–1). Followed by a bounding box and more data ❓.
+The level's CMI file has more models (aliens, weapons) in its second directory
+(`u8 length, name, u32 offset`, offset relative to file offset 4; offset 0 means "look it up in
+the arena"), in the same format (`cmi_load_model_table`).
+
+#### Model (`model_parse`)
+
+```
+u32 flags                        0: one unnamed part; 1: named parts
+u32 material count, char[16] × count (the game keeps the first 10 characters)
+[flags] u32 part count           (otherwise 1)
+per part:
+  [flags] char[12] name, f32 pivot[3] (unused by the game)
+  u32 vertex count, f32[3] × count        model space
+  u32 triangle count, 36-byte triangles    same layout as world triangles, UVs in texels
+  [flags] f32 bbox[6]            xmin, xmax, ymin, ymax, zmin, zmax (unused)
+f32 bbox[6]                      whole model (unused)
+u32 reference point count (≤ 8), f32[3] × count
+```
+
+All parts are drawn with the object's transform: part vertices are absolute model coordinates.
+
+#### Animation (`arena_find_animation`, `anim_step_frames`)
+
+```
++0   f32 speed (1.0: 30 frames per second)
++4   u32 track count T
++8   u32 frame count F
++12  u32 track offset[T]         relative to animation + 4
+     f32 root motion[F][3]
+     u32 reference point count R, f32[R][F][3]
+track:
++0   char[12] part name
++12  u32 vertex count (the game uses the model part's count instead)
++16  f32 scale; if its bits & 0x7FFFFFFF are 0, the track uses matrices
+```
+
+- **Delta tracks** (scale ≠ 0): `f32 base[n][3]` at +20, then records `s16 frame, s8 delta[n][3]`,
+  ending with frame −1. Frame 0 sets the vertices to `base`; each record adds `delta × scale`
+  (frames without a record hold the previous vertices, so frames must be applied in order).
+- **Matrix tracks** (rigid parts): `u8 rotation shift` at +20, `u8 position shift` at +21,
+  `f32 base[n][3]` at +22, then `s16 m[F][3][4]`: R = m / (0x8000 >> rotation shift),
+  t = m[·][3] / (0x8000 >> position shift), vertices = R·base + t.
+- Tracks are matched to model parts by name (case-insensitive). Parts without a track keep their
+  current vertices, so each object instance needs its own copy of the vertices.
+- Root motion: stepping to frame f moves the object by `motion[f]` (model space); `motion[0]` is the
+  opposite of the sum of the others, so looping returns to the start.
 
 ### World section ✅ (`arena_parse_world`)
 
@@ -146,7 +193,10 @@ An arena's `HMO_n.MAT` or a level's `LEVELnS.MTI` (offsets relative to the inter
   | 1024–1027 | `GLASS1`–`GLASS4` | Glass |
   | 1028 | `RIPPLE` | Water |
 
-- `kind` = 0x10000 or 0x10001: animated sprite; the first `u16` is the frame count ❓
+- High 16 bits of `kind` set (0x10000, 0x10001, 0x20000): animated texture ✅:
+  `u32 frame count, u16 width, u16 height`, then the frames (`width × height` indices each).
+  Used for effects (`EXPLODE`, `FIRE`) and animated walls (`M_COMM`). The meaning of the low bits
+  is unknown ❓.
 - Otherwise (0, or 2 for some floors): texture `u16 width, u16 height`, then `width × height`
   palette indices, row by row.
 
@@ -154,8 +204,14 @@ An arena's `HMO_n.MAT` or a level's `LEVELnS.MTI` (offsets relative to the inter
 
 `u32 size, u32 count`, then per entry `char[12] name, u32 offset` (relative to file offset 4).
 Sizes are the difference between consecutive offsets. Plain images are `u16 width, u16 height`
-followed by palette indices. `SNIPERS1` is probably a headerless 640 × 480 image (judging by its size). Kurt's animations
-(`K_*`) and other entries use an unknown format ❓.
+followed by palette indices. `SNIPERS1` is probably a headerless 640 × 480 image (judging by its size).
+
+Kurt's animations (`K_*`) are RLE sprite animations ✅: `u32 size`, `u32 frame count`,
+`u32 frame offsets[count]` (relative to the frame count), then frames: `u16 width, u16 height,
+s16 hotspot x, s16 hotspot y`, then rows of commands: `0x00–0x7F` = n + 1 literal palette indices,
+`0x80–0xFD` = the next index repeated n − 0x7C times, `0xFE` = end of row, `0xFF` = end of frame.
+Index 0 is transparent. See [gameplay.md](gameplay.md#kurts-sprite-damp_sprite_draw-rle_draw_hotspot)
+for how the hotspot is used.
 
 ## SNI (sound archive) ✅
 
@@ -169,3 +225,19 @@ Common header, `u32 count`, then per entry `char[12] name, u16 ?, u16 ?, u32 off
 (`HMO_1$XG_0` = alien `XG` #0 in arena `HMO_1`) and definitions of effects, bullets and pickups
 (`EXPLODE`, `BULLET`, `SW_HOME`, …). Directories are `u32 count`, then per entry
 `u8 length, char name[length], u32 offset`.
+
+## Menu files 🟡
+
+- `MISC/OPTIONS.BNI` (BNI archive): `MDKOPT` is the main menu background (a 768-byte palette, then a
+  600 × 360 image with the plain image header) ✅; `MAINSONG` is the menu music (RIFF WAV) ✅;
+  `INTRO1A` ❓.
+- `MISC/MDKFONT.FTI`: `u32 size, u32 count`, then per entry `char[8] name, u32 offset` (relative to
+  file offset 4) ✅. Entries:
+  - texts (NUL-terminated, `
+` for line breaks) ✅: `OPT0`–`OPT4` (main menu), `OM_*` (options),
+    `KM_*` (key names), `PAUSED`, …
+  - `SYS_PAL`: 64 colors, the same as the first 64 of `MDKOPT`'s palette ✅
+  - `FONTBIG`, `FONTSML`: 256 glyph offsets (relative to the font), then glyphs starting with
+    `u8 width, s8 y offset, u16 height`, followed by compressed rows ❓
+  - `F8`: 8 × 8 bitmap font (128 characters) ✅
+  - `SND_PUSH`: menu sound (RIFF WAV) ✅

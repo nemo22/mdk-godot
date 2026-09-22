@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/follow_camera.gd" id="1_camera"]
+
+[node name="FollowCamera" type="Camera3D"]
+physics_interpolation_mode = 2
+fov = 71.5
+near = 0.1
+far = 20000.0
+script = ExtResource("1_camera")

@@ -22,7 +22,7 @@ var sky_offset := 0
 var sky_top_color := 0
 var sky_bottom_color := 0
 ## Arenas and corridors (`HMO_n`, `CHMO_n`), in file order. Each is a Dictionary with
-## `name`, `value` (f32 ❓) and `records` (Array of Dictionaries with `type`, `id`, `position`, `name`).
+## `name`, `value` (the camera pitch in degrees, positive looks down) and `records` (Array of Dictionaries with `type`, `id`, `position`, `name`).
 var arenas: Array[Dictionary] = []
 
 

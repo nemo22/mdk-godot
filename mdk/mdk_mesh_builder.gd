@@ -90,8 +90,7 @@ static func build_arena_mesh(arena: MDKArena, resolver: MaterialResolver) -> Arr
 
 	var mesh := ArrayMesh.new()
 	for material: Material in by_material:
-		var texture: Texture2D = material.get_shader_parameter(&"index_texture") if material is ShaderMaterial else null
-		var uv_scale := Vector2.ONE / texture.get_size() if texture else Vector2.ZERO
+		var uv_scale: Vector2 = material.get_meta(&"uv_scale", Vector2.ZERO)
 		var triangles: PackedInt32Array = by_material[material]
 		var positions := PackedVector3Array()
 		var uvs := PackedVector2Array()
@@ -113,11 +112,65 @@ static func build_arena_mesh(arena: MDKArena, resolver: MaterialResolver) -> Arr
 	return mesh
 
 
+## Builds the mesh of a model in a given pose (the vertices of each part, see `MDKModel.get_rest_pose()`
+## and `MDKModelAnimation.bake()`), with one surface per material.
+static func build_model_mesh(model: MDKModel, pose: Array, resolver: MaterialResolver) -> ArrayMesh:
+	var by_material := {}
+	for p in model.parts.size():
+		var part := model.parts[p]
+		for tri in part.triangle_materials.size():
+			var material := resolver.get_material(part.triangle_materials[tri], model.materials)
+			if not material:
+				continue
+			if not by_material.has(material):
+				by_material[material] = []
+			by_material[material].push_back(Vector2i(p, tri))
+
+	var mesh := ArrayMesh.new()
+	for material: Material in by_material:
+		var uv_scale: Vector2 = material.get_meta(&"uv_scale", Vector2.ZERO)
+		var triangles: Array = by_material[material]
+		var positions := PackedVector3Array()
+		var uvs := PackedVector2Array()
+		positions.resize(triangles.size() * 3)
+		uvs.resize(triangles.size() * 3)
+		var i := 0
+		for key: Vector2i in triangles:
+			var part := model.parts[key.x]
+			var vertices: PackedVector3Array = pose[key.x]
+			for k in 3:
+				positions[i] = to_godot(vertices[part.triangle_indices[key.y * 3 + k]])
+				uvs[i] = part.triangle_uvs[key.y * 3 + k] * uv_scale
+				i += 1
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = positions
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, material)
+	return mesh
+
+
+## Builds the collision shape of an arena (every triangle, including invisible ones).
+static func build_arena_collision(arena: MDKArena) -> ConcavePolygonShape3D:
+	var faces := PackedVector3Array()
+	faces.resize(arena.triangle_indices.size())
+	for i in arena.triangle_indices.size():
+		faces[i] = to_godot(arena.vertices[arena.triangle_indices[i]])
+	var shape := ConcavePolygonShape3D.new()
+	shape.backface_collision = true
+	shape.set_faces(faces)
+	return shape
+
+
 static func make_palette_material(texture: MDKTexture, palette: MDKPalette) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = PALETTE_SHADER
 	material.set_shader_parameter(&"index_texture", texture.get_index_texture())
 	material.set_shader_parameter(&"palette", palette.get_texture())
+	material.set_shader_parameter(&"frame_count", texture.frame_count)
+	# UVs are in texels of one frame.
+	material.set_meta(&"uv_scale", Vector2(1.0 / texture.width, 1.0 / texture.height))
 	return material
 
 
@@ -135,6 +188,8 @@ static func make_special_material(value: int) -> Material:
 	else:
 		return null
 	var material := make_color_material(color)
+	# Glass, mirrors and water are visible from both sides.
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if color.a < 1.0:
 		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	return material
@@ -143,6 +198,6 @@ static func make_special_material(value: int) -> Material:
 static func make_color_material(color: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.cull_mode = BaseMaterial3D.CULL_BACK
 	material.albedo_color = color
 	return material

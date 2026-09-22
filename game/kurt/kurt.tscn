@@ -1,0 +1,21 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://game/kurt/kurt.gd" id="1_kurt"]
+[ext_resource type="Script" path="res://game/sprite_animator.gd" id="2_sprite"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_kurt"]
+radius = 0.6
+height = 5.0
+
+[node name="Kurt" type="CharacterBody3D"]
+floor_max_angle = 0.7227
+floor_snap_length = 0.6
+safe_margin = 0.01
+script = ExtResource("1_kurt")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.5, 0)
+shape = SubResource("CapsuleShape3D_kurt")
+
+[node name="Sprite" type="MeshInstance3D" parent="."]
+script = ExtResource("2_sprite")

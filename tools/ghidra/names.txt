@@ -72,3 +72,80 @@ data 0x59920c g_sky_horizon_row
 data 0x599210 g_sky_offset
 data 0x5991f0 g_sky_top_color
 data 0x599200 g_sky_bottom_color
+
+# Timing
+func 0x43a120 timer_reset
+func 0x43a158 timer_frame
+func 0x43a2c0 timer_update
+func 0x43a3b8 timer_compute
+func 0x46f440 time_ms
+data 0x491e14 g_timing
+data 0x491e18 g_frame_ticks
+data 0x491e20 g_frame_dt_ticks
+data 0x491e24 g_frame_dt
+
+# Kurt ("Damp")
+func 0x41d4d8 game_frame
+func 0x466368 damp_control
+func 0x467fa4 damp_move
+func 0x4646a4 damp_animate
+note 0x4646a4 Kurt's animation state machine: state at 0x573a70 (100 still, 101 idle, 200 land, 300 shot, 400 turn, 500 side, 600 run, 700 fall, 701 chute...).
+func 0x408334 input_read_axes
+func 0x4688d0 vel_accel_dt
+func 0x468954 vel_accel
+func 0x468800 vel_friction
+func 0x440288 sincos_deg
+func 0x465e34 damp_collide_move
+func 0x4694bc damp_vertical
+func 0x469efc damp_gravity
+func 0x469868 damp_ledge_grab
+func 0x468db8 damp_buttslide
+func 0x4689c8 damp_look_updown
+func 0x41d2c4 damp_platform_floor
+func 0x46c448 damp_collect_pickups
+func 0x467a70 damp_debug_keys
+func 0x467068 damp_run_anim_frame
+func 0x466fd8 anim_step_dir
+func 0x401464 damp_sprite_draw
+func 0x401638 damp_sprite_draw_d3d
+func 0x4014c8 rle_draw_hotspot
+func 0x416358 rle_blit
+data 0x573a70 g_damp_state
+data 0x5739c0 g_damp_position
+data 0x5739f0 g_damp_yaw
+data 0x573a3c g_damp_vertical_speed
+
+# Collision
+func 0x4093e0 bsp_sweep_box
+func 0x409680 bsp_sweep_node
+func 0x409c40 bsp_leaf_tri_test
+func 0x409cec plane_pushout
+func 0x409d6c plane_pushout_xy
+func 0x413c80 conveyor_push
+func 0x413c24 updraft_query
+
+# Camera and projection
+func 0x4174d0 camera_update
+func 0x417ee8 camera_clearance
+func 0x4185f0 arena_build_drawlist
+func 0x46e1e8 project_point
+func 0x46da10 project_divide
+func 0x46db50 set_projection
+
+# Models and animations
+func 0x440adc arena_find_animation
+func 0x4040e8 arena_resolve_model
+func 0x430cf0 model_parse
+func 0x430fc8 cmi_load_model_table
+func 0x43d93c cmi_model_directory
+func 0x404374 model_instance_create
+func 0x404188 model_create_box
+func 0x43a89c object_anim_update
+func 0x43ab70 anim_step_frames
+func 0x43af28 anim_apply_matrix_track
+func 0x43f284 vertices_bbox
+func 0x40dca0 model_draw_parts
+func 0x40e770 model_draw_triangle
+func 0x471954 d3d_submit_triangle
+func 0x46dd38 mat3_mul_vec
+func 0x4310cc arena_register_sounds

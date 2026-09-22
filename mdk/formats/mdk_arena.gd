@@ -11,6 +11,12 @@ var palette_rgb := PackedByteArray()
 ## The arena's `HMO_n.MAT` texture archive.
 var textures: MDKTextureArchive
 
+## Models, animations and sounds of the arena's models section (name to MDKModel,
+## MDKModelAnimation and RIFF WAV bytes).
+var models := {}
+var animations := {}
+var sounds := {}
+
 ## World material names (textures, or `PEN_n` for flat palette colors).
 var materials: Array[String] = []
 
@@ -35,13 +41,33 @@ static func parse(p_name: String, bytes: PackedByteArray, offset: int) -> MDKAre
 	arena.name = p_name
 	# The game loads `size` bytes after the size field; offsets are relative to that buffer.
 	var buf := offset + 4
-	var _section_models := buf + bytes.decode_u32(buf)
+	var section_models := buf + bytes.decode_u32(buf)
 	var section_palette := buf + bytes.decode_u32(buf + 4)
 	var section_world := buf + bytes.decode_u32(buf + 8)
 	arena.palette_rgb = bytes.slice(section_palette, section_palette + 112 * 3)
 	arena.textures = MDKTextureArchive.parse(bytes, buf + 0x10)
 	arena._parse_world(bytes, section_world)
+	arena._parse_models(bytes, section_models + 4)
 	return arena
+
+
+## Parses the models section. `base` is right after its size.
+func _parse_models(bytes: PackedByteArray, base: int) -> void:
+	var r := BinReader.new(bytes, base)
+	var animation_count := r.u32()
+	var model_count := r.u32()
+	var sound_count := r.u32()
+	for i in animation_count:
+		var animation_name := r.name(8)
+		animations[animation_name] = MDKModelAnimation.parse(animation_name, bytes, base + r.u32())
+	for i in model_count:
+		var model_name := r.name(8)
+		models[model_name] = MDKModel.parse(model_name, bytes, base + r.u32())
+	for i in sound_count:
+		var sound_name := r.name(12)
+		r.skip(4)
+		var offset := base + r.u32()
+		sounds[sound_name] = bytes.slice(offset, offset + r.u32())
 
 
 func _parse_world(bytes: PackedByteArray, base: int) -> void:
