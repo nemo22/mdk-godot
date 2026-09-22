@@ -3,6 +3,20 @@ class_name Level
 extends Node3D
 
 const SKY_SHADER := preload("res://mdk/shaders/sky.gdshader")
+## Triangle flags changed by scripts (`group_set_state`): hidden, and not solid.
+const TRIANGLE_HIDDEN := 0x10
+const TRIANGLE_NOT_SOLID := 0x20
+
+
+## The triangles of an arena that share a group number (the top byte of their flags), which scripts
+## show, hide, retexture or make destructible together. Group 0 is the rest of the arena.
+class TriangleGroup:
+	var triangles := PackedInt32Array()
+	var mesh: MeshInstance3D
+	var shape: CollisionShape3D
+	## `TRIANGLE_HIDDEN` and `TRIANGLE_NOT_SOLID`.
+	var flags := 0
+
 
 var number := 0
 var dti: MDKDti
@@ -15,6 +29,11 @@ var triangle_count := 0
 ## Bounds of each arena's geometry (Godot coordinates) and its camera pitch in degrees (DTI).
 var arena_bounds := {}
 var arena_pitch := {}
+## Arena name to its triangle groups (group number to `TriangleGroup`).
+var arena_groups := {}
+
+var _arenas := {}
+var _resolvers := {}
 
 
 ## Loads level `p_number` (3–8) and builds its arenas.
@@ -54,19 +73,22 @@ func load_level(p_number: int) -> void:
 		var archives: Array[MDKTextureArchive] = [arena.textures, level_textures]
 		archives.append_array(all_archives)
 		var resolver := MDKMeshBuilder.MaterialResolver.new(palette, archives)
-		var instance := MeshInstance3D.new()
-		instance.name = arena_name
-		instance.mesh = MDKMeshBuilder.build_arena_mesh(arena, resolver)
-		add_child(instance)
+		_arenas[arena_name] = arena
+		_resolvers[arena_name] = resolver
+		var root := Node3D.new()
+		root.name = arena_name
+		add_child(root)
+		var groups := {}
+		for tri in arena.triangle_flags.size():
+			var group_number := (arena.triangle_flags[tri] >> 24) & 0xFF
+			if not groups.has(group_number):
+				groups[group_number] = TriangleGroup.new()
+			groups[group_number].triangles.push_back(tri)
+		for group_number: int in groups:
+			_build_group(arena, root, group_number, groups[group_number])
+		arena_groups[arena_name] = groups
 		if not resolver.missing.is_empty():
 			push_warning("%s: materials not found: %s" % [arena_name, ", ".join(resolver.missing)])
-
-		var body := StaticBody3D.new()
-		body.name = "Collision"
-		var shape := CollisionShape3D.new()
-		shape.shape = MDKMeshBuilder.build_arena_collision(arena)
-		body.add_child(shape)
-		instance.add_child(body)
 		triangle_count += arena.triangle_materials.size()
 		var aabb := AABB(MDKMeshBuilder.to_godot(arena.vertices[0]), Vector3.ZERO)
 		for v in arena.vertices:
@@ -77,6 +99,60 @@ func load_level(p_number: int) -> void:
 		arena_pitch[entry.name] = entry.value
 
 	_setup_sky()
+
+
+func _build_group(arena: MDKArena, root: Node3D, group_number: int, group: TriangleGroup) -> void:
+	var suffix := "" if group_number == 0 else "_%d" % group_number
+	group.mesh = MeshInstance3D.new()
+	group.mesh.name = "Mesh" + suffix
+	group.mesh.mesh = MDKMeshBuilder.build_arena_mesh(arena, _resolvers[arena.name], group.triangles)
+	root.add_child(group.mesh)
+	var body := StaticBody3D.new()
+	body.name = "Collision" + suffix
+	body.set_meta(&"arena", arena.name)
+	body.set_meta(&"group", group_number)
+	group.shape = CollisionShape3D.new()
+	group.shape.shape = MDKMeshBuilder.build_arena_collision(arena, group.triangles)
+	body.add_child(group.shape)
+	root.add_child(body)
+
+
+## Changes the flags of a triangle group (`group_set_state` op): 0 hides it and makes it not solid,
+## 1 (and others) shows it and makes it solid, 2/3 hide/show, 4/5 not solid/solid.
+func set_group_state(arena_name: String, group_number: int, op: int) -> void:
+	var group: TriangleGroup = arena_groups.get(arena_name, {}).get(group_number)
+	if not group or group_number == 0:
+		return
+	match op:
+		0:
+			group.flags |= TRIANGLE_HIDDEN | TRIANGLE_NOT_SOLID
+		2:
+			group.flags |= TRIANGLE_HIDDEN
+		3:
+			group.flags &= ~TRIANGLE_HIDDEN
+		4:
+			group.flags |= TRIANGLE_NOT_SOLID
+		5:
+			group.flags &= ~TRIANGLE_NOT_SOLID
+		_:
+			group.flags &= ~(TRIANGLE_HIDDEN | TRIANGLE_NOT_SOLID)
+	group.mesh.visible = not group.flags & TRIANGLE_HIDDEN
+	group.shape.set_deferred(&"disabled", group.flags & TRIANGLE_NOT_SOLID != 0)
+
+
+## Gives every triangle of a group the material `value` (`group_set_texture`).
+func set_group_texture(arena_name: String, group_number: int, value: int) -> void:
+	var group: TriangleGroup = arena_groups.get(arena_name, {}).get(group_number)
+	if group and group_number != 0:
+		group.mesh.mesh = MDKMeshBuilder.build_arena_mesh(_arenas[arena_name], _resolvers[arena_name], group.triangles, value)
+
+
+## Returns the group of the arena floor below `position` (Godot coordinates), or 0.
+func get_floor_group(position: Vector3, exclude: Array[RID]) -> int:
+	var query := PhysicsRayQueryParameters3D.create(position + Vector3.UP, position + Vector3.DOWN * 10.0, 1)
+	query.exclude = exclude
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return hit.collider.get_meta(&"group", 0) if not hit.is_empty() else 0
 
 
 ## Returns the name of the (smallest) arena whose bounds contain `position`, or an empty string.

@@ -82,6 +82,18 @@ rate = 0.75u + 0.25 up to u = 1, then 0.25u + 0.75. It plays backwards when back
   bounding box.
 - Conveyor belts (`conveyor_push`) add their velocity, depending on the floor triangle's material.
 
+## Firing
+
+The fire key (held) sets `0x573a38` in `damp_move` (unless Kurt is in a state class ≥ 8), which
+starts the looping chain gun sound and asks for the firing animation: `K_SHOT` (state 300) when
+standing, `K_RUNFIR` (state 601, footsteps on frames 4 and 17) when running. `damp_animate` clears
+the muzzle flash every frame and, while firing, every other frame picks the next of the 4 `K_MUZZF`
+frames at random (`(previous + rand(3) + 1) & 3`) with a random 0–4 pixel offset added to a
+per-state base: turning and strafing (0, 0), falling (40, 6), jumping (0, 0), running jump
+(0, −10), chute (20, 0), surfing (−42, 12). `damp_sprite_draw` draws the flash's hotspot at Kurt's
+hotspot plus that offset, before (behind) Kurt. The hits are described in
+[engine.md](engine.md#kurts-chain-gun-0x41a304).
+
 ## Camera (`camera_update`)
 
 - Distance D = 8 u behind Kurt's feet, pivot height H = 4.5 u (4.0 in sniper mode).

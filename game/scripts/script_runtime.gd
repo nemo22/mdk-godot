@@ -7,8 +7,14 @@ const TICK := 1.0 / 30.0
 ## Flags of objects spawned by `spawn_flagged` and of projectiles (`fire`).
 const SPAWN_FLAGGED_FLAGS := 0x2008A6
 const PROJECTILE_FLAGS := 0x80820
-## Flag of objects that keep running when Kurt is in another arena.
-const FLAG_ALWAYS_ACTIVE := 0x200000
+## Chain gun (`0x41a304`): damage per tick, reach beyond the target's size, and the reach of shots
+## that hit nothing.
+const CHAIN_GUN_DAMAGE := 1
+const CHAIN_GUN_REACH := 140.0
+const CHAIN_GUN_WALL_REACH := 150.0
+## Collision layer of the level geometry (objects are on layer 2, see `MDKObject.update_body()`, and
+## Kurt on layer 3).
+const LEVEL_LAYER := 1
 
 
 ## Per arena script state (the arena's embedded object).
@@ -18,12 +24,24 @@ class ArenaState:
 	var variables := [0.0, 0.0, 0.0, 0.0]
 	var flags := 0
 	var started := false
+	## Per triangle group (1–16): hit behaviour (`group_set_hit_flags`), hit types that run the
+	## group's hit script and that script (`group_on_hit`), and counters (`arena+0xcc`).
+	var group_hit_flags: Array[int] = []
+	var group_hit_masks: Array[int] = []
+	var group_hit_scripts: Array[int] = []
+	var group_counters: Array[int] = []
+
+
+	func _init() -> void:
+		for array: Array[int] in [group_hit_flags, group_hit_masks, group_hit_scripts, group_counters]:
+			array.resize(16)
 
 
 var level: Level
 var kurt: Kurt
 var vm: MDKScriptVM
 var motion: MDKObjectMotion
+var behaviors: MDKObjectBehaviors
 var global_variables := [0.0, 0.0, 0.0, 0.0]
 var global_flags := 0
 ## Kurt's position (MDK coordinates) and the target of alien scripts (Kurt, or a decoy).
@@ -50,6 +68,7 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	kurt = p_kurt
 	vm = MDKScriptVM.new(self, MDKScriptDecoder.new(level.cmi.bytes))
 	motion = MDKObjectMotion.new(self)
+	behaviors = MDKObjectBehaviors.new(self)
 
 
 func get_arena_state(arena_name: String) -> ArenaState:
@@ -67,6 +86,11 @@ func get_arena_state(arena_name: String) -> ArenaState:
 func _exit_tree() -> void:
 	if motion:
 		motion.free_probe()
+
+
+## Group of the floor triangle below Kurt (`0x573c10`).
+func get_kurt_floor_group() -> int:
+	return level.get_floor_group(kurt.global_position, [kurt.get_rid()])
 
 
 ## Converts a Godot position to MDK coordinates.
@@ -105,11 +129,18 @@ func _tick() -> void:
 		if not state.started:
 			state.started = true
 			_spawn_dti_aliens(arena_name)
+	# Kurt moves, then fires, then the objects run (`game_frame`).
+	if kurt.firing:
+		fire_chain_gun()
 	if not current_arena.is_empty():
 		vm.run(get_arena_state(current_arena).controller)
+	# Only the objects of Kurt's arena are updated (0x43c7dc; the original also updates the arena
+	# seen through an open door).
 	for obj in objects.duplicate():
-		if obj.dead or (obj.arena != current_arena and not obj.flags & FLAG_ALWAYS_ACTIVE):
+		if obj.dead or obj.arena != current_arena:
 			continue
+		if obj.flags & MDKObject.FLAG_DOOR:
+			behaviors.update_door(obj)
 		vm.run(obj)
 		if not obj.dead:
 			motion.update(obj)
@@ -158,23 +189,53 @@ func spawn(parent: MDKObject, type_name: String, mdk_position: Vector3, yaw: flo
 
 
 func remove(obj: MDKObject) -> void:
+	if obj.attached and not obj.attached.dead:
+		remove(obj.attached)
 	obj.dead = true
 	objects.erase(obj)
 	obj.queue_free()
 
 
-## Kills an object (`object_kill`): it switches to its death script if it has one, otherwise it's
-## removed (the original explodes it).
-func kill(obj: MDKObject) -> void:
+## Kills an object (`object_kill` 0x43d670): it switches to its death script if it has one,
+## otherwise it explodes. `yaw` is the direction the explosion faces.
+func kill(obj: MDKObject, yaw := 0.0) -> void:
 	obj.health = 0
 	if obj.death_script:
 		obj.move_command = 0
+		obj.flags |= MDKObject.FLAG_NOT_TARGET
 		obj.restart = obj.death_script
 		obj.wait_time = 0.0
 		obj.wait_resume = obj.death_script
 		obj.death_script = 0
 	else:
-		remove(obj)
+		explode(obj, yaw)
+
+
+## Blows an object up (0x43d224): its explosion sound (opcode 25, or `EXPLODE`), and the global
+## model 0 (`EXPLODE`, an animated texture) scaled to the object's height and turned to the camera.
+## The original also throws the object's parts as debris.
+func explode(obj: MDKObject, yaw: float) -> void:
+	var bounds := get_world_bounds(obj)
+	var center := bounds.get_center() if obj.model else obj.mdk_position
+	play_sound_at(obj.labels[0] if not obj.labels[0].is_empty() else "EXPLODE", center)
+	remove(obj)
+	var model_name: String = level.cmi.model_offsets.keys()[0] if not level.cmi.model_offsets.is_empty() else ""
+	var effect := spawn(obj, model_name, center, yaw, -1, 0, false)
+	if not effect:
+		return
+	effect.flags |= MDKObject.FLAG_NOT_TARGET | MDKObject.FLAG_NOT_SOLID_2
+	effect.effect_frames = 26
+	var texture := _get_resolver(obj.arena).find_texture(effect.model.materials[0]) if not effect.model.materials.is_empty() else null
+	if texture:
+		effect.effect_frames = texture.frame_count
+	effect.model_scale = bounds.size.z / maxf(effect.model.bounds.size.z, 0.1) * 1.5
+	var camera := get_viewport().get_camera_3d()
+	if camera:
+		var eye := to_mdk(camera.global_position)
+		var horizontal := Vector2(eye.x - center.x, eye.y - center.y).length()
+		effect.pitch = rad_to_deg(atan2(eye.z + 5.0 - center.z, horizontal))
+	effect.set_texture_frame(0)
+	effect.update_transform()
 
 
 ## An object fell far below its arena (0x43d884): it switches to its death script, put back
@@ -187,6 +248,196 @@ func fall_out(obj: MDKObject) -> void:
 	obj.velocity.z = 0.0
 	obj.mdk_position.z = get_arena_floor(obj.arena) - 150.0
 	obj.flags &= ~MDKObject.FLAG_GRAVITY
+
+
+## Fires the chain gun for one tick (`0x41a304`): it hits the best target in front of Kurt (see
+## `_aim_score()`) or, without one, the arena up to 150 units away.
+func fire_chain_gun() -> void:
+	var origin := kurt_position + Vector3(0, 0, 5)
+	var best: MDKObject = null
+	var best_score := -1.0
+	var best_part := -1
+	var best_bounds := AABB()
+	for obj in objects:
+		if obj.dead or obj.arena != current_arena or obj.health == 0 or obj.flags & (MDKObject.FLAG_NOT_SOLID | MDKObject.FLAG_NOT_TARGET):
+			continue
+		# Weak parts are targets of their own.
+		if obj.flags & MDKObject.FLAG_WEAK_PARTS and obj.model:
+			var part_bounds := obj.get_part_bounds()
+			for i in obj.model.parts.size():
+				if obj.hidden_parts & (1 << i) or not _is_weak_part(obj, i):
+					continue
+				var bounds := get_world_bounds(obj, part_bounds[i])
+				var score := _aim_score(bounds, origin, best_score)
+				if score >= 0.0:
+					best = obj
+					best_score = score
+					best_part = i
+					best_bounds = bounds
+			if best == obj:
+				continue
+		var bounds := get_world_bounds(obj)
+		var score := _aim_score(bounds, origin, best_score)
+		if score >= 0.0:
+			best = obj
+			best_score = score
+			best_part = -1
+			best_bounds = bounds
+	if best:
+		_chain_gun_hit(best, best_part, best_bounds, origin)
+		return
+	var direction := Vector2.from_angle(deg_to_rad(target_yaw)) * CHAIN_GUN_WALL_REACH
+	var hit := raycast(origin, origin + Vector3(direction.x, direction.y, 0.0))
+	if not hit.is_empty():
+		spark(to_mdk(hit.position), 1)
+
+
+## Aim test of the chain gun (`0x41ab2c`): a box is a target when it's within its size + 140 units
+## of `origin`, inside a cone around Kurt's yaw that is wider for big and close boxes, and visible.
+## Returns its score (squared distance, height counting double; lower is better), or -1.
+func _aim_score(bounds: AABB, origin: Vector3, best_score: float) -> float:
+	var size := maxf(bounds.size.length(), 10.0)
+	var center := bounds.get_center()
+	var distance := origin.distance_to(center)
+	if distance > size + CHAIN_GUN_REACH:
+		return -1.0
+	var angle := fposmod(rad_to_deg(atan2(center.y - origin.y, center.x - origin.x)) - target_yaw, 360.0)
+	var cone := (size - 2.0) * 90.0 / (size - 2.0 + distance)
+	if angle > cone and angle < 360.0 - cone:
+		return -1.0
+	var height := center.z - kurt_position.z
+	var score := Vector2(center.x - origin.x, center.y - origin.y).length_squared() + 4.0 * height * height
+	if best_score >= 0.0 and score > best_score:
+		return -1.0
+	if not raycast(origin, center).is_empty():
+		return -1.0
+	return score
+
+
+## Whether part `index` is one of the object's weak parts (0x462384): its name starts with the
+## prefix and has a digit right after it.
+static func _is_weak_part(obj: MDKObject, index: int) -> bool:
+	var part_name := obj.model.parts[index].name
+	if part_name.length() <= obj.weak_prefix_length or not part_name[obj.weak_prefix_length].is_valid_int():
+		return false
+	return part_name.begins_with(obj.weak_prefix.left(obj.weak_prefix_length))
+
+
+func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3) -> void:
+	var center := bounds.get_center()
+	var direction := rad_to_deg(atan2(center.y - origin.y, center.x - origin.x))
+	obj.hit_event = -1
+	if part >= 0 and part < obj.part_health.size():
+		obj.part_health[part] -= CHAIN_GUN_DAMAGE
+		if obj.part_health[part] <= 0:
+			obj.part_health[part] = 0
+			obj.hit_event = part + 1
+	if obj.health < 65000:
+		obj.health -= CHAIN_GUN_DAMAGE
+	obj.hit_type = -1
+	obj.hit_direction = direction
+	if obj.health > 0:
+		# Sparks on the side of the box facing Kurt.
+		var toward := Vector2.from_angle(deg_to_rad(direction))
+		var point := center - Vector3(toward.x * bounds.size.x, toward.y * bounds.size.y, 0.0) * 0.5
+		spark(point, 1, obj.labels[1])
+		return
+	obj.health = 0
+	kill(obj, direction + 180.0)
+
+
+## Sparks where a shot hits (`0x41e8f4`); a ricochet sound (the object's, set by opcode 26, or
+## `RICO1`–`RICO3`) every 4 ticks.
+func spark(point: Vector3, _count: int, sound_name := "") -> void:
+	if _tick_count & 3:
+		return
+	play_sound_at(sound_name if not sound_name.is_empty() else ["RICO1", "RICO2", "RICO3"][randi() % 3], point)
+
+
+## Starts the object's looping sound (`set_loop_sound`), stopping the previous one; an empty name
+## just stops it.
+func set_loop_sound(obj: MDKObject, sound_name: String) -> void:
+	if obj.loop_sound:
+		obj.loop_sound.queue_free()
+		obj.loop_sound = null
+	var stream := level.get_sound(sound_name) if not sound_name.is_empty() else null
+	if not stream:
+		return
+	stream = stream.duplicate()
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_end = stream.data.size() / ((2 if stream.stereo else 1) * (2 if stream.format == AudioStreamWAV.FORMAT_16_BITS else 1))
+	obj.loop_sound = AudioStreamPlayer3D.new()
+	obj.loop_sound.stream = stream
+	obj.loop_sound.unit_size = 50.0
+	obj.add_child(obj.loop_sound)
+	obj.loop_sound.play()
+
+
+## Looks for cover (`find_cover_spot`): a DTI record of type 5 of the object's arena, 9–400 units
+## away, no farther than Kurt, closer to Kurt than the object, hidden from Kurt but visible to the
+## object. One of the 3 nearest is chosen (nearer ones more likely) and the object goes there
+## (movement command 43); otherwise the object stops.
+func find_cover_spot(obj: MDKObject) -> void:
+	var spots: Array[Vector3] = []
+	var to_kurt := obj.distance_to(kurt_position)
+	for entry in level.dti.arenas:
+		if entry.name != obj.arena:
+			continue
+		for record: Dictionary in entry.records:
+			if record.type != 5:
+				continue
+			var spot: Vector3 = record.position
+			var distance := obj.distance_to(spot)
+			if distance < 9.0 or distance > 400.0 or distance > to_kurt or spot.distance_to(kurt_position) >= to_kurt:
+				continue
+			if raycast(kurt_position + Vector3(0, 0, 5), spot + Vector3(0, 0, 5)).is_empty():
+				continue
+			if not raycast(obj.mdk_position + Vector3(0, 0, 5), spot + Vector3(0, 0, 5)).is_empty():
+				continue
+			spots.push_back(spot)
+	obj.move_command = 0
+	if spots.is_empty():
+		return
+	spots.sort_custom(func(a: Vector3, b: Vector3) -> bool: return obj.distance_to(a) < obj.distance_to(b))
+	var choice: int = [0, 0, 0, 1, 1, 2][randi() % 6] if spots.size() >= 3 else randi() % spots.size()
+	var destination := spots[mini(choice, spots.size() - 1)]
+	obj.move_command = 43
+	obj.move_destination = destination
+	obj.waypoint = destination
+	obj.path = 0
+
+
+## Plays a sound at a point (MDK coordinates), independently of any object.
+func play_sound_at(sound_name: String, point: Vector3) -> void:
+	var stream := level.get_sound(sound_name)
+	if not stream:
+		return
+	var player := AudioStreamPlayer3D.new()
+	player.stream = stream
+	player.unit_size = 50.0
+	player.position = MDKMeshBuilder.to_godot(point)
+	player.finished.connect(player.queue_free)
+	add_child(player)
+	player.play()
+
+
+## Spawns a connector (a door) between `obj`'s arena and `other_arena` (`spawn_connector`). A
+## connector of that type already linking both arenas is moved into this arena instead, unless it's
+## in Kurt's arena.
+func spawn_connector(obj: MDKObject, type_name: String, mdk_position: Vector3, yaw: float, instance: int, other_arena: String, script: int) -> void:
+	if other_arena == "NONE":
+		return
+	for other in objects:
+		if not other.dead and other.type_name == type_name and ((other.arena == obj.arena and other.connects == other_arena) or (other.arena == other_arena and other.connects == obj.arena)):
+			if other.arena != current_arena:
+				other.arena = obj.arena
+				other.connects = other_arena
+			return
+	var door := spawn(obj, type_name, mdk_position, yaw, instance, script, false)
+	if door:
+		door.flags |= 0x1108000
+		door.connects = other_arena
+		behaviors.setup_door(door)
 
 
 ## Fires a projectile (`fire`): the global model `bullet_name` starts at a reference point of `obj`
@@ -223,8 +474,7 @@ func get_arena_floor(arena_name: String) -> float:
 ## Casts a ray against the level geometry (MDK coordinates). Returns the hit as by `intersect_ray`
 ## (Godot coordinates), or an empty dictionary.
 func raycast(from: Vector3, to: Vector3) -> Dictionary:
-	var query := PhysicsRayQueryParameters3D.create(MDKMeshBuilder.to_godot(from), MDKMeshBuilder.to_godot(to))
-	query.exclude = [kurt.get_rid()]
+	var query := PhysicsRayQueryParameters3D.create(MDKMeshBuilder.to_godot(from), MDKMeshBuilder.to_godot(to), LEVEL_LAYER)
 	return get_world_3d().direct_space_state.intersect_ray(query)
 
 
@@ -325,15 +575,18 @@ func _command_object(sender: MDKObject, receiver: MDKObject, command: int, targe
 	return false
 
 
-## World bounds (MDK) of an object's model, turned by its yaw.
-func get_world_bounds(obj: MDKObject) -> AABB:
-	if not obj.model:
-		return AABB(obj.mdk_position, Vector3.ZERO)
-	var bounds := obj.model.bounds
-	var out := AABB(obj.mdk_position, Vector3.ZERO)
+## World bounds (MDK) of an object in its current pose (`obj+0x198`), or of `bounds` (model space),
+## turned by its yaw.
+func get_world_bounds(obj: MDKObject, bounds: Variant = null) -> AABB:
+	if bounds == null:
+		if not obj.model:
+			return AABB(obj.mdk_position, Vector3.ZERO)
+		bounds = obj.get_pose_bounds()
+	var box: AABB = bounds
+	var out := AABB()
 	for i in 8:
-		var corner := (bounds.get_endpoint(i) * obj.model_scale).rotated(Vector3.BACK, deg_to_rad(obj.yaw))
-		out = out.expand(obj.mdk_position + corner)
+		var corner := obj.mdk_position + (box.get_endpoint(i) * obj.model_scale).rotated(Vector3.BACK, deg_to_rad(obj.yaw))
+		out = AABB(corner, Vector3.ZERO) if i == 0 else out.expand(corner)
 	return out
 
 
@@ -378,6 +631,8 @@ func _get_resolver(arena_name: String) -> MDKMeshBuilder.MaterialResolver:
 		if arena:
 			archives.push_front(arena.textures)
 		_resolvers[arena_name] = MDKMeshBuilder.MaterialResolver.new(palette, archives)
+		# Some models have flat parts seen from both sides (e.g. the petals of iris doors).
+		_resolvers[arena_name].double_sided = true
 	return _resolvers[arena_name]
 
 
@@ -395,6 +650,8 @@ func can_see_kurt(obj: MDKObject, range: float, cone: float) -> bool:
 ## 0 play, 1 restart, 2 play unless it's already playing, 3 stop.
 func play_sound(obj: MDKObject, sound_name: String, flags: int, _position: Variant) -> void:
 	var mode := flags & 3
+	if flags & 4:
+		obj.tracked_sound = sound_name
 	var existing := obj.get_node_or_null(NodePath("Sound_" + sound_name))
 	if existing:
 		if mode == 2 and existing.playing:

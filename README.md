@@ -6,8 +6,8 @@ and executable (`MDKD3D.EXE`, the Direct3D version).
 
 **Status:** early. All 6 levels load (arenas, textures, palettes, skies), and Kurt can run, jump and
 use his chute through them with the original movement and camera. The original scripts run: aliens,
-pickups and doors are placed, walk, fly along their paths and shoot, but they can't be hurt yet and
-Kurt has no weapons. See [the roadmap](docs/roadmap.md).
+pickups and doors are placed, walk, fly along their paths and shoot, doors open, and Kurt's chain
+gun shoots and blows aliens up. See [the roadmap](docs/roadmap.md).
 
 ## Running
 
@@ -25,7 +25,8 @@ Open the project in Godot 4.7 and run it. Command line options (after `--`):
   the scripts.
 
 Controls: W/S or Up/Down to run, A/D to strafe, the mouse or Left/Right to turn, Space to jump (hold
-it while falling to open the chute), Shift for turbo, Escape to go back to the menu. In the level
+it while falling to open the chute), Shift for turbo, the left mouse button or Ctrl to fire, Escape
+to go back to the menu. In the level
 viewer: WASD to move, Q/E to go down/up, click to look around, Shift to go faster.
 
 ## Layout

@@ -1,4 +1,4 @@
-## Moves scripted objects each frame like the original's object update (0x47868c): spline paths
+## Moves scripted objects each frame like the original object update (0x43c7dc): spline paths
 ## (0x43c258), movement commands (0x45b6c8), gravity (0x45e74c), then friction and velocity with
 ## arena collisions (0x45e810). See `docs/engine.md`.
 class_name MDKObjectMotion
@@ -29,6 +29,14 @@ func _init(p_runtime: MDKScriptRuntime) -> void:
 
 
 func update(obj: MDKObject) -> void:
+	if obj.effect_frames > 0:
+		# Effects only play their texture animation, one frame per tick (`object_anim_update`).
+		obj.effect_time += ticks
+		if obj.effect_time >= obj.effect_frames:
+			runtime.remove(obj)
+		else:
+			obj.set_texture_frame(int(obj.effect_time))
+		return
 	if obj.path:
 		_update_path(obj)
 	_update_command(obj)
@@ -39,9 +47,16 @@ func update(obj: MDKObject) -> void:
 	_apply_velocity(obj)
 	if obj.dead:
 		return
+	if obj.flags & MDKObject.FLAG_PICKUP:
+		runtime.behaviors.update_pickup(obj)
+	var time := obj.animation_time
 	obj.advance_animation(dt)
+	if not obj.frame_sound.is_empty() and obj.animation and time < obj.frame_sound_frame 			and obj.frame_sound_frame <= time + dt * MDKObject.ANIMATION_FPS * obj.animation.speed:
+		runtime.play_sound(obj, obj.frame_sound, 0, null)
+		obj.frame_sound = ""
 	obj.previous_position = obj.mdk_position
 	obj.update_transform()
+	obj.update_body()
 
 
 # Spline paths: `u32 key count`, then keys of 40 bytes: `s32 frame`, position, in tangent and out
@@ -383,7 +398,7 @@ func _apply_velocity(obj: MDKObject) -> void:
 ## what it hits. Returns the normal (MDK) of the first hit, or `null`.
 func _sweep(obj: MDKObject, motion: Vector3) -> Variant:
 	# The box is half as wide as the object's bounds and starts just above its origin (0x45fec4).
-	var bounds := obj.model.bounds if obj.model else AABB(Vector3(-1, -1, 0), Vector3(2, 2, 4))
+	var bounds := obj.get_pose_bounds() if obj.model else AABB(Vector3(-1, -1, 0), Vector3(2, 2, 4))
 	var c := absf(cos(deg_to_rad(obj.yaw)))
 	var s := absf(sin(deg_to_rad(obj.yaw)))
 	var size := bounds.size * obj.model_scale

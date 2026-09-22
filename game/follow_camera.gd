@@ -57,7 +57,7 @@ func _process(delta: float) -> void:
 
 	# Keep walls from getting between Kurt and the camera.
 	var head := feet + Vector3.UP * HEAD_HEIGHT
-	var query := PhysicsRayQueryParameters3D.create(head, position)
+	var query := PhysicsRayQueryParameters3D.create(head, position, MDKScriptRuntime.LEVEL_LAYER)
 	query.exclude = [target.get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	if hit:

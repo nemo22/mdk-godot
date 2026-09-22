@@ -16,6 +16,8 @@ var unimplemented := {}
 ## Frame time in seconds and in 30 Hz ticks.
 var dt := 1.0 / 30.0
 var ticks := 1.0
+## Opcodes run so far in the current object's frame (`if_opcode_count`).
+var _opcode_count := 0
 
 
 func _init(p_runtime: MDKScriptRuntime, p_decoder: MDKScriptDecoder) -> void:
@@ -45,6 +47,7 @@ func run(obj: MDKObject) -> void:
 			obj.hit_event = 0
 			return
 		count += 1
+		_opcode_count = count
 		if count > MAX_OPCODES_PER_FRAME:
 			obj.restart = 0
 			return
@@ -232,6 +235,18 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 		113:  # spawn_relative
 			var offset := Vector2(o[0], o[1]).rotated(deg_to_rad(obj.yaw))
 			runtime.spawn(obj, o[3], obj.mdk_position + Vector3(offset.x, offset.y, o[2]), 0.0, -1, o[4], false)
+		150:  # door_set_anims: opening and closing animations
+			obj.door_animations = [o[0], o[1]]
+		151:  # door_set_names: sounds when opening, closing, open, closed
+			obj.door_sounds = [o[0], o[1], o[2], o[3]]
+		152:  # door_set_flags (the low 4 bits are the engine's state)
+			obj.door_state = (obj.door_state & 0xF) | (o[0] & ~0xF)
+		153:  # door_set_param: distance at which the door opens
+			obj.door_distance = o[0]
+		100:  # arena_show (every arena is always drawn in the port)
+			pass
+		149:  # spawn_connector
+			runtime.spawn_connector(obj, o[5], Vector3(o[0], o[1], o[2]), o[3], o[4], o[6], o[7])
 		111:  # set_instance
 			obj.instance_id = o[0] & 0xFFFF
 		110:  # delete_self
@@ -261,6 +276,11 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			return _branch(obj, ins, obj.is_animation_done() or obj.animation_frame >= o[0] - 1)
 		118:  # anim_end_frame (s16)
 			obj.animation_end_frame = _s16((o[0] & 0xFFFF) - 1)
+		24:  # set_id_and_name: a sound played when the animation reaches frame n - 1
+			obj.frame_sound_frame = o[0] - 1
+			obj.frame_sound = o[1]
+		25, 26:  # set_string154, set_string150
+			obj.labels[ins.opcode - 25] = o[0]
 		19:  # anim_mark_ended
 			obj.animation_end_frame = MDKObject.ANIMATION_ENDED
 		31:  # set_parts_mask
@@ -282,11 +302,36 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			else:
 				obj.model_scale = _value(obj, o[0])
 
-		# Hits (no weapons yet: nothing is ever hit).
-		22, 42:  # if_hit, if_hit_part
-			return _branch(obj, ins, false)
+		# Hits.
+		22:  # if_hit: any hit but blasts; the event is cleared when true
+			var hit := obj.hit_event != 0 and obj.hit_event != -3
+			if hit:
+				obj.hit_event = 0
+			return _branch(obj, ins, hit)
+		212:  # if_hit_fd: a blast
+			var hit := obj.hit_event == -3
+			if hit:
+				obj.hit_event = 0
+			return _branch(obj, ins, hit)
+		42:  # if_hit_part: `name` (cleared when true) or `["", name]` (not cleared); "ANY" = any part
+			var part_name: String = o[0] if o[0] is String else o[0][1]
+			var hit: bool = obj.model != null and obj.hit_event > 0 and obj.hit_event <= obj.model.parts.size() \
+					and (part_name.to_upper() == "ANY" or obj.model.parts[obj.hit_event - 1].name.to_upper() == part_name.to_upper())
+			if hit and o[0] is String:
+				obj.hit_event = 0
+			return _branch(obj, ins, hit)
 		198:  # set_weak_parts
-			pass
+			obj.flags |= MDKObject.FLAG_WEAK_PARTS
+			obj.weak_prefix = o[0]
+			obj.weak_prefix_length = o[1]
+			obj.part_health.resize(8)
+			obj.part_health.fill(o[2] & 0xFFFF)
+			obj.part_max_health = obj.part_health.duplicate()
+		81:  # push_hit_dir: velocity along the direction of the last hit
+			var speed: float = _value(obj, o[1]) * (dt if o[0] == 1 else 1.0)
+			var direction := Vector2.from_angle(deg_to_rad(obj.hit_direction)) * speed
+			obj.velocity.x += direction.x
+			obj.velocity.y += direction.y
 		108:  # if_touching_kurt
 			if obj.move_command == 61:
 				return _branch(obj, ins, obj.contact_flags & MDKObject.CONTACT_TOUCHED_KURT != 0)
@@ -427,6 +472,8 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			obj.path_stop = _s16(o[0] & 0xFFFF)
 			if obj.path_stop == -2:
 				obj.path_stop = roundi(obj.path_time)
+		124:  # path_yaw_offset
+			obj.path_yaw_offset = o[0]
 		102:  # if_path_done
 			return _branch(obj, ins, obj.path == 0)
 
@@ -443,6 +490,8 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			_variables(obj, o[0])[clampi(o[1], 0, 3)] = o[2]
 		66:  # add_var
 			_variables(obj, o[0])[clampi(o[1], 0, 3)] += o[2]
+		216:  # add_var_dt
+			_variables(obj, o[0])[clampi(o[1], 0, 3)] += o[2] * dt
 		67:  # if_var
 			return _branch(obj, ins, _compare(_variables(obj, o[0])[clampi(o[1], 0, 3)], o[2]))
 		68:  # set_flag
@@ -455,6 +504,8 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			_set_flags(obj, o[0], _get_flags(obj, o[0]) ^ (1 << (o[1] & 31)))
 		72:  # if_flag_clear
 			return _branch(obj, ins, _get_flags(obj, o[0]) & (1 << (o[1] & 31)) == 0)
+		176:  # if_flag_40000
+			return _branch(obj, ins, obj.flags & 0x40000 != 0)
 		116:  # flags_set
 			obj.flags |= o[0]
 		117:  # flags_clear
@@ -495,7 +546,49 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 				obj.attach_points = Vector2i(o[0], o[1])
 				obj.move_command = 74
 
+		175:  # if_inventory (Kurt's inventory isn't implemented: always empty)
+			return _branch(obj, ins, _compare(0.0, [o[1], o[2], o[3] if o[3] != null else 0.0]))
+
+		# Triangle groups of the arena.
+		98:  # group_set_state
+			runtime.level.set_group_state(obj.arena, o[0], o[1])
+		140:  # group_set_texture
+			runtime.level.set_group_texture(obj.arena, o[0], o[1])
+		99:  # group_on_hit
+			var state := runtime.get_arena_state(obj.arena)
+			state.group_hit_masks[(o[1] - 1) & 15] = o[0]
+			state.group_hit_scripts[(o[1] - 1) & 15] = o[2]
+		168:  # group_set_hit_flags: 0x80 = destructible (hidden until hit)
+			runtime.get_arena_state(obj.arena).group_hit_flags[(o[0] - 1) & 15] = o[1]
+			if o[1] & 0x80:
+				runtime.level.set_group_state(obj.arena, o[0], 2)
+		162:  # arena_counter_set
+			runtime.get_arena_state(obj.arena).group_counters[(o[0] - 1) & 15] = o[1]
+		163:  # if_arena_counter
+			return _branch(obj, ins, _compare(runtime.get_arena_state(obj.arena).group_counters[(o[0] - 1) & 15], o[1]))
+		194:  # group_state_near_player: groups around the one under Kurt get the op, the others its opposite
+			var floor_group := runtime.get_kurt_floor_group()
+			if o[1] > 0 and floor_group >= o[1] and floor_group <= o[2]:
+				for group in range(o[1], o[2] + 1):
+					var near: bool = group >= floor_group - o[3] and group <= floor_group + o[4]
+					var op: int = o[0] if near else o[0] ^ 1
+					runtime.level.set_group_state(runtime.current_arena, group, op)
+
 		# Conditions about Kurt, the arena and chance.
+		123:  # if_not_in_player_arena
+			return _branch(obj, ins, obj.arena != runtime.current_arena)
+		222:  # if_opcode_count
+			return _branch(obj, ins, _compare(_opcode_count, o[0]))
+		231:  # if_move_idle_flag (the movement code's stuck detection isn't implemented)
+			return _branch(obj, ins, obj.move_command == 0 and obj.stuck_count != 0)
+		236:  # if_no_floor_at: no floor below a point in front of the object
+			var offset := Vector2(o[0], o[1]).rotated(deg_to_rad(obj.yaw))
+			var depth: float = o[2] if o[2] != 0.0 else 10.0
+			var point := obj.mdk_position + Vector3(offset.x, offset.y, 1.0)
+			return _branch(obj, ins, runtime.raycast(point, point - Vector3(0, 0, depth + 1.0)).is_empty())
+		46:  # find_cover_spot
+			runtime.find_cover_spot(obj)
+			return _branch(obj, ins, obj.move_command == 43)
 		103:  # if_kurt_in_box
 			var box := AABB(Vector3(o[0], o[1], o[2]), Vector3(o[3] - o[0], o[4] - o[1], o[5] - o[2]))
 			return _branch(obj, ins, box.has_point(runtime.kurt_position))
@@ -521,6 +614,17 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 		# Sounds.
 		89:  # play_sound
 			runtime.play_sound(obj, o[2], o[0], o[1])
+		107:  # set_loop_sound
+			runtime.set_loop_sound(obj, o[0])
+		249:  # if_own_sound: mode 0 playing, 1 playing this sound, other: not playing
+			var player := obj.get_node_or_null(NodePath("Sound_" + obj.tracked_sound)) as AudioStreamPlayer3D if not obj.tracked_sound.is_empty() else null
+			var playing := player != null and player.playing
+			var condition := playing
+			if o[0] == 1:
+				condition = playing and obj.tracked_sound.to_upper() == String(o[2]).to_upper()
+			elif o[0] != 0:
+				condition = not playing
+			return _branch(obj, ins, condition)
 		_:
 			unimplemented[ins.opcode] = unimplemented.get(ins.opcode, 0) + 1
 			if not ins.action.is_empty():

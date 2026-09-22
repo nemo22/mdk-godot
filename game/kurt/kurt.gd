@@ -43,7 +43,19 @@ const CHUTE_BRAKE := 256.0
 ## Seconds standing still before the idle animation plays.
 const IDLE_DELAY := 6.0
 
-enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND }
+enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE }
+
+## Muzzle flash (`K_MUZZF`) offsets in the states that don't show the chain gun firing by
+## themselves (`damp_animate`): a random offset of 0–4 pixels is added. `SHOT` and `RUN_FIRE` have
+## the flash in their frames.
+const MUZZLE_OFFSETS := {
+	State.TURN: Vector2i(0, 0),
+	State.SIDE: Vector2i(0, 0),
+	State.FALL: Vector2i(40, 6),
+	State.JUMP: Vector2i(0, 0),
+	State.RUN_JUMP: Vector2i(0, -10),
+	State.CHUTE: Vector2i(20, 0),
+}
 
 ## Sprite animation used by each state, and whether it loops.
 const STATE_ANIMATIONS := {
@@ -57,6 +69,8 @@ const STATE_ANIMATIONS := {
 	State.FALL: ["K_FALL", true],
 	State.CHUTE: ["K_FLOATC", true],
 	State.LAND: ["K_LAND", false],
+	State.SHOT: ["K_SHOT", true],
+	State.RUN_FIRE: ["K_RUNFIR", true],
 }
 
 ## Yaw in radians (0 faces -Z).
@@ -72,6 +86,8 @@ var animation_frame := 0.0
 var chute_open := false
 ## Health (the original's `0x574324`; damage isn't scaled by the difficulty yet).
 var health := 100
+## The chain gun is firing (`0x573a38`).
+var firing := false
 var sprites: MDKBni
 ## Returns a sound by name (see `Level.get_sound()`).
 var get_sound: Callable
@@ -82,8 +98,12 @@ var _jump_released := true
 ## The original alternates two pairs of footstep sounds (`damp_animate`).
 var _footstep_pair := false
 var _sound_players: Array[AudioStreamPlayer] = []
+var _gun_player: AudioStreamPlayer
+var _muzzle_frame := 0
+var _ticks := 0
 
 @onready var sprite: SpriteAnimator = $Sprite
+@onready var muzzle: SpriteAnimator = $Muzzle
 
 
 func _ready() -> void:
@@ -98,7 +118,11 @@ func setup(p_sprites: MDKBni, palette: MDKPalette, p_get_sound: Callable) -> voi
 		var player := AudioStreamPlayer.new()
 		add_child(player)
 		_sound_players.push_back(player)
+	_gun_player = AudioStreamPlayer.new()
+	add_child(_gun_player)
 	sprite.setup(palette)
+	muzzle.setup(palette)
+	muzzle.visible = false
 	_set_state(State.STILL)
 	set_physics_process(true)
 
@@ -144,7 +168,45 @@ func _physics_process(delta: float) -> void:
 
 	_update_vertical(delta, on_floor)
 	move_and_slide()
+	_update_firing()
 	_update_state(delta, forward_input, strafe_input)
+	_update_muzzle()
+
+
+## Holding fire fires the chain gun (`damp_move`); the hits are done by the scripts runtime
+## (`MDKScriptRuntime.fire_chain_gun()`).
+func _update_firing() -> void:
+	var fire := Input.is_action_pressed(&"fire")
+	if fire == firing:
+		return
+	firing = fire
+	if firing:
+		# `GATTFIRE` loops while firing (`MULTIFIRE` with the super chain gun).
+		var stream: AudioStreamWAV = get_sound.call("GATTFIRE")
+		if stream:
+			if stream.loop_mode == AudioStreamWAV.LOOP_DISABLED:
+				stream = stream.duplicate()
+				stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+				var frame_bytes := (2 if stream.stereo else 1) * (2 if stream.format == AudioStreamWAV.FORMAT_16_BITS else 1)
+				stream.loop_end = stream.data.size() / frame_bytes
+			_gun_player.stream = stream
+			_gun_player.play()
+	else:
+		_gun_player.stop()
+
+
+## Every other tick while firing, a random muzzle flash frame is drawn behind Kurt.
+func _update_muzzle() -> void:
+	_ticks += 1
+	muzzle.visible = firing and MUZZLE_OFFSETS.has(state) and _ticks & 1 == 1
+	if not muzzle.visible:
+		return
+	_muzzle_frame = (_muzzle_frame + randi() % 3 + 1) & 3
+	var offset: Vector2i = MUZZLE_OFFSETS[state] + Vector2i(randi() % 5, randi() % 5)
+	# The flash's hotspot is drawn at Kurt's hotspot plus the offset.
+	muzzle.anchor_offset = sprite.anchor_offset - Vector2(offset)
+	muzzle.flip_h = sprite.flip_h
+	muzzle.show_frame(sprites.get_animation("K_MUZZF"), _muzzle_frame)
 
 
 ## Keyboard turning accelerates up to a maximum speed; the mouse turns directly.
@@ -222,12 +284,14 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 	elif state == State.LAND and not animation_done and is_zero_approx(forward_input) and is_zero_approx(strafe_input):
 		pass
 	elif not is_zero_approx(forward_input) or absf(forward_speed) > 1.0:
-		_set_state(State.RUN)
+		_set_state(State.RUN_FIRE if firing else State.RUN)
 	elif not is_zero_approx(strafe_input) or absf(strafe_speed) > 1.0:
 		_set_state(State.SIDE)
 		sprite.flip_h = strafe_speed < 0.0
 	elif absf(turn_speed) > 1.0:
 		_set_state(State.TURN)
+	elif firing:
+		_set_state(State.SHOT)
 	elif state == State.IDLE and not animation_done:
 		pass
 	elif state == State.STILL and state_time > IDLE_DELAY:
@@ -237,18 +301,19 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 
 	animation = sprites.get_animation(STATE_ANIMATIONS[state][0])
 	match state:
-		State.RUN:
+		State.RUN, State.RUN_FIRE:
 			# `damp_run_anim_frame`: the run animation follows the speed (backwards when backing up).
 			var u := absf(forward_speed) / TICKS * 1.5
 			var rate := 0.75 * u + 0.25 if u <= 1.0 else 0.25 * u + 0.75
 			var previous := posmod(int(floor(animation_frame)), animation.frame_count)
 			animation_frame += rate * TICKS * delta * (-1.0 if forward_speed < 0.0 else 1.0)
 			var current := posmod(int(floor(animation_frame)), animation.frame_count)
-			# Footsteps on frames 0 and 13.
+			# Footsteps on frames 0 and 13 (4 and 17 when firing).
+			var steps := [4, 17] if state == State.RUN_FIRE else [0, 13]
 			if current != previous:
-				if current == 0:
+				if current == steps[0]:
 					play_sound("FOOT3" if _footstep_pair else "FOOT1")
-				elif current == 13:
+				elif current == steps[1]:
 					play_sound("FOOT4" if _footstep_pair else "FOOT2")
 					_footstep_pair = not _footstep_pair
 		State.TURN:

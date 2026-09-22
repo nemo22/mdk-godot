@@ -75,7 +75,8 @@ level 3; other levels use other prefixes (`MEAT_n`, `OLYM_n`, `DANT_n`, …). Na
 
 Each records list is `u32 count`, then 36-byte records:
 `u32 type, s32 id, f32 angle, f32 x, f32 y, f32 z, char[12] name`. Types seen: 1, 3 (in corridors),
-2 (alien, `name` refers to a CMI script), 6 (connection, id 1000+), 7, 8. ❓
+2 (alien, `name` refers to a CMI script), 5 (cover spots for `find_cover_spot`, the game keeps the
+list at `arena+0x38`/`+0x3c`), 6 (connection, id 1000+), 7, 8. ❓
 
 ### Block 3: palette ✅
 
@@ -172,11 +173,16 @@ track:
    - `material` ≥ 0: index into the material names. `material` < 0: palette color `-material`, or a
      special material (see below) if `-material` ≥ 256.
    - UVs are in texels (textures repeat, e.g. floors).
-   - `flags`: bits 20–22 look like a light level ❓, bit 0 ❓.
+   - `flags`: top byte = triangle group (see [engine.md](engine.md#arena-triangle-groups));
+     0x10 not drawn and 0x20 not solid (set only by scripts); bits 20–22 look like a light level ❓,
+     bit 0 ❓.
 4. `u32 count`, then vertices `f32 x, y, z` in world coordinates.
 5. `u32` ❓, then BSP leaf data ❓.
 
 ## Texture archive (MAT/MTI) ✅
+
+Palette index 0 is transparent: only effect textures use it (`EXPLODE`, `FIRE`, `TRAIL`, `BUBB`,
+`SB_*`, `SL_*`, `PULSE`…), like sprites.
 
 An arena's `HMO_n.MAT` or a level's `LEVELnS.MTI` (offsets relative to the internal name):
 `char[12] name, u32 size, u32 count`, then 24-byte entries:

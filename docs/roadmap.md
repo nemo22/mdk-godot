@@ -13,13 +13,18 @@
   scripts, DTI aliens, spawned objects, commands between objects.
 - Object movement like the original: spline paths, walking, flying, chasing, formations,
   projectiles, gravity, friction and collisions with the arena.
+- Doors (connectors), pickups falling with chutes, arena triangle groups (hidden/non-solid parts),
+  Kurt colliding with objects and carried by platforms.
+- Kurt's chain gun: firing animations and sound, auto-aimed hits, weak parts, hit events, deaths
+  and explosions.
 
 ## Next
 
-1. **Aliens and scripts**: the remaining opcodes (hits and weak parts, effects, doors and triangle
-   groups, sounds attached to animations, the bomb/decoy), path planning around walls
-   (`plan_move`), automatic banking, chains.
-2. **Weapons and sniper mode**, HUD.
+1. **Aliens and scripts**: effects (sparks, particles, debris), path planning around walls
+   (`plan_move`), automatic banking, chains, triangle group hits, the second arena seen through
+   open doors.
+2. **Weapons and sniper mode**: pickups and the inventory, Kurt's projectiles (grenades, mortar…),
+   the super chain gun, sniper mode, HUD (health, boss bar), Kurt's death.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
 4. **Movement details**: ledge grab, slippery floors, conveyors, updrafts, camera roll, pushing Kurt
    away from walls instead of moving the camera closer, stopping on walls hit head-on.

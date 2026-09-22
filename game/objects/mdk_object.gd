@@ -10,8 +10,19 @@ const ANIMATION_FPS := 30.0
 const FLAG_GRAVITY := 0x2
 const FLAG_COLLIDES := 0x4
 const FLAG_LOOP := 0x8
+## Kurt goes through the object (with 0x800).
+const FLAG_NOT_SOLID := 0x10
+## The chain gun doesn't aim at the object.
+const FLAG_NOT_TARGET := 0x20
 const FLAG_NO_BANKING := 0x80
+const FLAG_NOT_SOLID_2 := 0x800
+## Some parts take damage separately (`set_weak_parts`).
+const FLAG_WEAK_PARTS := 0x2000
 const FLAG_NO_TURNING := 0x10000
+## A pickup that has landed.
+const FLAG_LANDED := 0x20000
+const FLAG_DOOR := 0x100000
+const FLAG_PICKUP := 0x200000
 const FLAG_PATH_PUSHES := 0x8000000
 const FLAG_BOUNCES := 0x20000000
 const FLAG_PATH_ONCE := 0x400
@@ -70,8 +81,19 @@ var gosub_returns: Array[int] = []
 var gosub_restarts: Array[int] = []
 ## Per gosub level frame counters (in ticks), used by timer conditions.
 var level_timers := [0.0, 0.0, 0.0, 0.0, 0.0]
-## Hit event of this frame (`obj+0x21e`): > 0 = hit on part index + 1, < 0 = other hits.
+## Hit event of this frame (`obj+0x21e`): > 0 = hit on part index + 1 (or a weak part destroyed),
+## -1 chain gun, -2 other hits, -3 blasts.
 var hit_event := 0
+## What caused the last hit (`obj+0x21d`: -1 chain gun, -2 super chain gun, 1–4 Kurt's projectiles)
+## and its direction (`obj+0x224`, degrees).
+var hit_type := 0
+var hit_direction := 0.0
+## Weak parts (`set_weak_parts`): parts named `prefix` followed by a digit at `prefix_length` take
+## damage separately; hit points per part index.
+var weak_prefix := ""
+var weak_prefix_length := 0
+var part_health: Array[int] = []
+var part_max_health: Array[int] = []
 ## Command priority and obey level (`obj+0x11a`, `obj+0x11b`).
 var priority := 0
 var obey_level := 0
@@ -82,6 +104,8 @@ var obey_level := 0
 var move_command := 0
 var move_parameter := 0
 var move_destination := Vector3()
+## Frames the movement code found the object stuck (`obj+0x2a0`; not computed yet).
+var stuck_count := 0
 ## Current waypoint (`obj+0x12c`, also the formation offset for command 1).
 var waypoint := Vector3()
 ## Reference points `a` (own) and `b` (of the leader) of an attachment (`attach_to`).
@@ -114,15 +138,51 @@ var path_yaw_offset := 0.0
 var animation: MDKModelAnimation
 var animation_time := 0.0
 var animation_frame := 0
+## Sound played when the animation reaches a frame (`set_id_and_name`: `obj+0x140`, `obj+0x144`).
+var frame_sound := ""
+var frame_sound_frame := 0
+## Effects (explosions) last this many ticks, showing texture frame `effect_time`, then vanish.
+var effect_frames := 0
+var effect_time := 0.0
+## Object carried along (a pickup's chute).
+var attached: MDKObject
+
+# Doors (`obj+0x306`…`obj+0x32a`, see `MDKObjectBehaviors`).
+## CMI offsets of the opening and closing animations.
+var door_animations := [0, 0]
+var door_state := 0
+## Kurt opens the door when he's closer than this.
+var door_distance := 20.0
+## Sounds when the door starts opening, starts closing, is open, is closed.
+var door_sounds := ["", "", "", ""]
+## Masks of the parts named `LOCK` and `HC…`.
+var lock_parts := 0
+var hatch_parts := 0
+
+## Arena on the other side of a connector (a door between two arenas, `spawn_connector`).
+var connects := ""
+## Sound tracked by `if_own_sound` (played by `play_sound` with flag 4) and the looping sound
+## (`set_loop_sound`).
+var tracked_sound := ""
+var loop_sound: AudioStreamPlayer3D
+## Strings set by opcodes 25 and 26 (`obj+0x154`, `obj+0x150`; their use isn't known).
+var labels := ["", ""]
 ## Hold frame (`obj+0x118`): the animation stops there; `ANIMATION_ENDED` once a non looping
 ## animation has ended, -1 = none.
 var animation_end_frame := ANIMATION_ENDED
 
 var _mesh_instance: MeshInstance3D
 var _resolver: MDKMeshBuilder.MaterialResolver
+## Body that Kurt collides with: a box per model part in the current pose.
+var _body: AnimatableBody3D
+var _body_shapes: Array[CollisionShape3D] = []
+## Pose the body's boxes were last built for.
+var _body_key := ""
 ## Shared cache of built meshes: `"model|animation|frame|hidden parts"` to ArrayMesh.
 static var _mesh_cache := {}
 static var _baked := {}
+## Shared cache of part bounds: `"model|animation|frame"` to an Array of AABB.
+static var _bounds_cache := {}
 
 
 func setup(p_type_name: String, p_model: MDKModel, resolver: MDKMeshBuilder.MaterialResolver) -> void:
@@ -172,6 +232,12 @@ func play_animation(p_animation: MDKModelAnimation, loop: bool) -> void:
 	_update_mesh()
 
 
+## Starts an animation from its first frame, even if it's already playing.
+func restart_animation(p_animation: MDKModelAnimation, loop: bool) -> void:
+	animation = null
+	play_animation(p_animation, loop)
+
+
 func is_animation_done() -> bool:
 	return animation == null or animation_end_frame == ANIMATION_ENDED
 
@@ -205,6 +271,12 @@ func advance_animation(delta: float) -> void:
 		animation_end_frame = ANIMATION_ENDED
 
 
+## Shows frame `index` of the object's animated textures (instead of animating them by time).
+func set_texture_frame(index: int) -> void:
+	if _mesh_instance:
+		_mesh_instance.set_instance_shader_parameter(&"frame_index", index)
+
+
 ## Hides the model parts of a mask (`set_parts_mask`).
 func set_hidden_parts(mask: int) -> void:
 	if mask != hidden_parts:
@@ -232,6 +304,79 @@ func _update_mesh() -> void:
 					pose[i] = PackedVector3Array()
 		_mesh_cache[key] = MDKMeshBuilder.build_model_mesh(model, pose, _resolver)
 	_mesh_instance.mesh = _mesh_cache[key]
+
+
+## Bounds of each model part in the current pose (model space).
+func get_part_bounds() -> Array:
+	var key := "%s|%s|%d" % [model.get_instance_id(), animation.get_instance_id() if animation else 0, animation_frame]
+	if not _bounds_cache.has(key):
+		var pose: Array
+		if animation:
+			var bake_key := "%s|%s" % [model.get_instance_id(), animation.get_instance_id()]
+			if not _baked.has(bake_key):
+				_baked[bake_key] = animation.bake(model)
+			pose = _baked[bake_key][animation_frame]
+		else:
+			pose = model.get_rest_pose()
+		var bounds := []
+		for vertices: PackedVector3Array in pose:
+			var aabb := AABB(vertices[0], Vector3.ZERO) if not vertices.is_empty() else AABB()
+			for v in vertices:
+				aabb = aabb.expand(v)
+			bounds.push_back(aabb)
+		_bounds_cache[key] = bounds
+	return _bounds_cache[key]
+
+
+## Bounds of the visible parts in the current pose (model space).
+func get_pose_bounds() -> AABB:
+	var bounds := get_part_bounds()
+	var out := AABB()
+	var first := true
+	for i in bounds.size():
+		var aabb: AABB = bounds[i]
+		if hidden_parts & (1 << i) or aabb.size == Vector3.ZERO and aabb.position == Vector3.ZERO:
+			continue
+		out = aabb if first else out.merge(aabb)
+		first = false
+	return out if not first else model.bounds
+
+
+## Updates the body Kurt collides with (`damp_collide_move` tests Kurt against the boxes of the
+## visible parts of objects that are alive and don't have flag 0x10 or 0x800; doors skip their
+## `LOCK` parts). Kurt can stand on the boxes and moving ones carry him.
+func update_body() -> void:
+	var solid := model != null and not dead and health != 0 and not flags & (FLAG_NOT_SOLID | FLAG_NOT_SOLID_2)
+	if not solid:
+		if _body and not _body_key.is_empty():
+			for shape in _body_shapes:
+				shape.disabled = true
+			_body_key = ""
+		return
+	if not _body:
+		_body = AnimatableBody3D.new()
+		_body.sync_to_physics = false
+		_body.collision_layer = 2
+		_body.collision_mask = 0
+		add_child(_body)
+		for part in model.parts:
+			var shape := CollisionShape3D.new()
+			shape.shape = BoxShape3D.new()
+			_body.add_child(shape)
+			_body_shapes.push_back(shape)
+	var skipped := hidden_parts | (lock_parts if flags & FLAG_DOOR else 0)
+	var key := "%d|%d|%d" % [animation.get_instance_id() if animation else 0, animation_frame, skipped]
+	if key == _body_key:
+		return
+	_body_key = key
+	var bounds := get_part_bounds()
+	for i in _body_shapes.size():
+		var shape := _body_shapes[i]
+		var aabb: AABB = bounds[i]
+		shape.disabled = skipped & (1 << i) != 0 or aabb.size == Vector3.ZERO
+		if not shape.disabled:
+			(shape.shape as BoxShape3D).size = MDKMeshBuilder.to_godot(aabb.size).abs().max(Vector3.ONE * 0.1)
+			shape.position = MDKMeshBuilder.to_godot(aabb.get_center())
 
 
 ## Index of the model part named `part_name`, or -1.

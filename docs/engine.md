@@ -35,17 +35,29 @@ a linked list per arena (`arena+0x68`). The field layout is in
 [scripts/notes_part1.md](scripts/notes_part1.md#object-fields-obj--alienobject-0x32e-bytes-allocated-by-0x45fd4c).
 Each arena also has an embedded object that runs the arena's script.
 
-### Object update (0x47868c)
+### Object update (0x43c7dc)
 
-Every frame, for each object of the arenas being simulated:
+Every frame `game_frame` updates the objects of Kurt's arena (`0x573a0c`), and of the second arena
+seen through an open door (`0x573a68`, when `0x573a6c` is set); objects of the other arenas are
+frozen. Then the arena's own script runs (the arena's embedded object at `arena+0x118`). For each
+active object (`obj+6`):
 
-1. Run the script if it has one (`script_run` 0x440bc8, see [scripts.md](scripts.md)).
-2. If active: follow the spline path, if any (0x43c258).
-3. Carry out the movement command (0x45b6c8).
-4. Gravity (0x45e74c).
-5. Friction, then move by the velocity with collisions (0x45e810).
-6. Animation (`object_anim_update` 0x43a89c), with root motion.
-7. Save the position as the previous position (`obj+0x180`).
+1. `obj+7 == 1`: it becomes the aliens' target (`0x491e48`, opcode 251).
+2. Built-in behaviours by flag: doors (0x100000, 0x43cc68) and swinging objects (0x400000, 0x43cfe8).
+3. Flag 0x40000000: 0x440074 (not identified); objects that died there, or that move to another
+   arena (`obj+0x2bc`, 0x43ca00), are skipped.
+4. Run the script if it has one (`script_run` 0x440bc8, see [scripts.md](scripts.md)).
+5. Follow the spline path, if any (0x43c258), then carry out the movement command (0x45b6c8).
+6. Gravity (0x45e74c), then friction and the move by the velocity with collisions (0x45e810).
+7. Built-in behaviours: Kurt's projectiles and effects (0x1000, 0x43deac), pickups (0x200000,
+   0x43daf4).
+8. Animation (`object_anim_update` 0x43a89c), with root motion.
+9. The measured velocity per tick (`obj+0x18c`), rolling objects (0x40, 0x4602c8), and if Kurt stands
+   on the object (`0x573b84`) he moves and turns with it. Then the position and yaw are saved as
+   the previous ones (`obj+0x180`, `obj+0x50`).
+
+A reduced update (0x478704 → 0x47868c: script, path, movement, velocity, animation) runs a few
+object types (`XM5_FLAP`, `BIGBOLT`, `SW_SBONE`, `SW_SEAL`…) in a special game state (`0x573c60`).
 
 ### Flags
 
@@ -58,17 +70,28 @@ the low byte). Identified bits:
 | 0x2 | gravity; friction is then horizontal only (opcode 36) |
 | 0x4 | collides with the arena geometry (opcode 35) |
 | 0x8 | the animation loops (opcodes 3/59) |
+| 0x10 | Kurt goes through it (opcode 63; doors set it while open) |
+| 0x40 | rolling (opcode 85) |
 | 0x80 | no automatic banking/pitch (opcode 97) |
+| 0x100 | a platform Kurt can stand on (`damp_platform_floor`) |
 | 0x200 | set by `follow_path` flags1 bit 0 |
 | 0x400 | the path is played once (`follow_path` flags2 bit 0) |
+| 0x800 | Kurt goes through it (pickups, projectiles) |
+| 0x1000 | Kurt's projectiles and effects (0x43deac) |
 | 0x10000 | doesn't turn to face its movement (paths, flying) |
+| 0x20000 | a pickup that has landed |
+| 0x40000 | tested by opcode 176 |
 | 0x80000 (0x14a bit 3) | also collides with the other arena during transitions |
+| 0x100000 | door (connector between two arenas, see below) |
+| 0x200000 | pickup (see below) |
+| 0x400000 | swinging object (0x43cfe8) |
 | 0x8000000 | the path drives the horizontal velocity instead of the position (`follow_path` flags1 bit 1) |
 | 0x10000000 | path speed depends on Kurt's distance (opcode 164) |
 | 0x20000000 | bounces off walls (velocity reflected with factor 0.8) instead of stopping |
-| 0x200000 | runs even when Kurt is in another arena |
+| 0x40000000 | 0x440074 runs before the script (not identified) |
 
-Objects created by `spawn_flagged` start with `0x2008A6`, projectiles get `|= 0x80820`.
+Objects created by `spawn_flagged` (pickups) start with `0x2008A6`, projectiles get `|= 0x80820`,
+doors `0x1108000`.
 
 `obj+0x14c` holds contact flags set by the movement code: 0x1 collided this frame, 0x2 on the floor
 (collided while moving down), 0x4 a projectile touched Kurt, 0x8 stuck (the stuck detection of
@@ -187,10 +210,112 @@ script target (the receiver's return point is its restart point), 43 go near the
 becomes the receiver's leader (`obj+0x138`). Selectors are listed in
 [script_opcodes.md](script_opcodes.md) (opcode 4).
 
+### Doors (0x43cc68)
+
+Doors are **connectors** between an arena and a corridor, created by `spawn_connector` (opcode 149)
+in the scripts of both: the second call finds the existing door and moves it into its arena. The
+door's state (`obj+0x312`: 1 open, 2 opening, 4 closing, 8 closed; higher bits set by opcode 152:
+0x10 not solid while open, 0x20 stays open, 0x40 locked, 0x100 lock hidden) changes every frame:
+
+- Kurt closer than `obj+0x30e` (opcode 153, 20 units by default): unless open, opening or locked,
+  play the opening animation (opcode 150, first) and show the arena behind the door (`BSPShow`).
+- Farther: unless closing, closed or staying open, play the closing animation (second).
+- When the animation ends the door becomes open or closed. A sound is played at each of the four
+  events (opcode 151: opening, closing, open, closed).
+- Model parts named `LOCK` are shown only on a closed locked door; parts whose name starts with
+  `HC` are hidden while the door is closed. Kurt doesn't collide with the `LOCK` parts.
+
+Door models can be flat: the level 6 iris door is 9 one-sided quads (`P1`…`P9`) around a `HUB`, so
+models are drawn without back face culling.
+
+### Pickups (0x43daf4)
+
+Pickups (flag 0x200000, spawned by arena scripts with `spawn_flagged`, often high in the air) fall
+with gravity; below −15 units/s their fall speed is held at −15 and a `SW_CHUTE` model is attached
+(movement command 74). On the floor they rise by 1.5 and get flag 0x20000; the chute then shrinks
+(scale −1/s) and is removed at 0.2. Landed pickups spin at 180°/s, except `SW_H150`, `SW_SEAL` and
+`SW_SBONE` (`SW_H150` plays its own animations near Kurt).
+
+### Kurt and objects (`damp_collide_move` 0x465e34, `damp_platform_floor` 0x41d2c4)
+
+Kurt collides with the objects of his arena that are active, alive (health ≠ 0) and have neither
+flag 0x10 nor 0x800: first their whole bounds (`obj+0x198`), then each visible model part's box
+(the part's bounds in the current animation frame, `part+0x44`), skipping the hidden parts
+(`obj+0x2c8`) and the `LOCK` parts of doors. Objects with flag 0x100 are platforms: Kurt can stand
+on them (`0x573b84`) and they carry him when they move or turn.
+
+### Hits
+
+When something hits an object it sets the object's hit event (`obj+0x21e`: part index + 1, −1 for
+the chain gun, −2 for other hits, −3 for blasts), what hit it (`obj+0x21d`: −1 chain gun, −2 super
+chain gun, 1–4 Kurt's projectile types) and the direction of the hit (`obj+0x224`, used by
+`push_hit_dir`). Scripts test it with `if_hit` (any hit but blasts), `if_hit_part` (by part name,
+`ANY` for any part) and `if_hit_fd` (blasts); a true test clears the event, and the end of each
+script frame (`0xFF`) clears it too.
+
+**Weak parts** (`set_weak_parts`, flag 0x2000): parts whose name is the given prefix followed by a
+digit at the given length take hits separately, with their own hit points (`obj+0x30e[part]`, max
+`obj+0x31e[part]`). When a weak part's hit points reach 0 the hit event is that part (index + 1).
+Parts with at most 900 hit points drive the boss health bar.
+
 ### Death
 
 `object_kill` (0x43d6d4 → 0x43d670): the object switches to its death script (`obj+0x110`, set by
-opcode 76) if it has one, otherwise it explodes (0x43d224).
+opcode 76) if it has one (movement stopped, health 0, flag 0x20 so the chain gun ignores it),
+otherwise it explodes (0x43d224):
+
+- The object's explosion sound (`obj+0x154`, opcode 25) or `EXPLODE`, and a screen shake by
+  distance.
+- Debris: the model's break-up parts (model record `+0x84`) fly off as particles, and gore when
+  the option `0x5742dc` is on.
+- An explosion object using the global model 0 (`EXPLODE`: 21 triangles with a 26-frame animated
+  texture): its texture shows one frame per tick and the object vanishes after the last one. It's
+  scaled to 1.5 × the object's height over the explosion model's, faces the shooter (yaw + 180°)
+  and is pitched towards the camera.
+
+## Kurt's chain gun (0x41a304)
+
+Holding fire (`damp_move`) sets `0x573a38`: the chain gun sound loops (`GATTFIRE`, or `MULTIFIRE`
+with the super chain gun) and Kurt's animation becomes `K_SHOT` (standing) or `K_RUNFIR`
+(running); in the other states a random frame of `K_MUZZF` is drawn behind Kurt every other tick
+([gameplay.md](gameplay.md#firing)). Every frame, after Kurt moves and before the objects run, the
+chain gun **hits instantly** (no bullets):
+
+1. Every object of Kurt's arena that is active, alive, without flags 0x10 and 0x20, is a candidate:
+   its bounds in the current pose (`obj+0x198`), or for objects with weak parts each visible weak
+   part's box (then the whole object if no part qualifies).
+2. The aim test (0x41ab2c) takes a box's size (its diagonal, at least 10) and its centre seen from
+   Kurt's position + 5 in height: the box qualifies when it's closer than size + 140, within a cone
+   of `(size − 2) × 90 / (size − 2 + distance)` degrees on either side of Kurt's yaw, and visible
+   (a ray to its centre doesn't hit the arena). Its score is `dx² + dy² + 4·dz²` (dz from Kurt's
+   feet); the lowest score wins. So the gun aims automatically, favouring close, big targets.
+3. The target loses 1 hit point per tick (6 with the super chain gun, whose timer `0x5743ef` counts
+   down while firing), unless it's indestructible (≥ 65000); a hit weak part loses them too. The
+   hit event is set (−1). Sparks fly on the side of the box facing Kurt, with the object's
+   ricochet sound (`obj+0x150`, opcode 26) or `RICO1`–`RICO3`, every 4 frames. At 0 hit points the
+   object is killed (with the super chain gun it's also pushed away at 20 units/s).
+4. Without a target, a ray is cast 150 units along Kurt's yaw: sparks where it hits the arena, and
+   the hit triangle's group reacts (0x40d560, hit type 2).
+
+Kurt's other weapons are projectiles in 3 slots (`0x573c98`, 0xfc bytes each, updated after the
+objects by 0x462708): a per-frame move function, a lifetime, types 1–4 (type 4 bounces off the
+arena); hitting an object sets its hit event, hitting the arena runs the group hit code, and types
+2–4 explode (0x4638cc, 150 damage within 25 or 50 units).
+
+## Arena triangle groups
+
+The top byte of an arena triangle's flags is its **group** (1–21, 0 = none; masks and counters
+exist for groups 1–16). Scripts change groups at run time:
+
+- `group_set_state` (98) sets or clears triangle flags **0x10** (not drawn: skipped by the draw list
+  0x40acc8) and **0x20** (not solid: skipped by the BSP collision `bsp_leaf_tri_test`). No triangle
+  has them set in the data. Arena scripts use this to hide rooms Kurt isn't in (level 5
+  `MUSE_1`), for destructible parts, bridges…
+- `group_set_texture` (140) gives every triangle of a group another material.
+- `group_set_hit_flags` (168) and `group_on_hit` (99) make groups react to hits: flag 0x80 makes a
+  group destructible (it's hidden until hit, then shown: its damaged version), hits increase the
+  group's counter (`arena+0xcc`, opcodes 162/163) and can run a script (0x40d560).
+- `group_state_near_player` (194) applies a state to the groups around the one under Kurt.
 
 ## Globals
 

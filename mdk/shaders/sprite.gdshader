@@ -13,6 +13,8 @@ uniform vec2 anchor = vec2(0.0);
 // Height of the original view in pixels.
 uniform float view_height = 360.0;
 uniform bool flip_h = false;
+// Moves the sprite away from the camera (world units), e.g. to draw a muzzle flash behind Kurt.
+uniform float depth_bias = 0.0;
 
 void vertex() {
 	vec2 pixel = vec2(VERTEX.x + 0.5, 0.5 - VERTEX.y) * frame_size;
@@ -21,6 +23,7 @@ void vertex() {
 		offset.x = -offset.x;
 	}
 	vec4 view_anchor = VIEW_MATRIX * vec4(MODEL_MATRIX[3].xyz, 1.0);
+	view_anchor.z -= depth_bias;
 	// World units per pixel at the anchor's depth: 2·depth·tan(fov/2) / view height.
 	// (The projection may flip Y, hence abs().)
 	float pixel_size = 2.0 * -view_anchor.z / (abs(PROJECTION_MATRIX[1][1]) * view_height);

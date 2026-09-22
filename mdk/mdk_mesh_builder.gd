@@ -3,6 +3,7 @@ class_name MDKMeshBuilder
 extends RefCounted
 
 const PALETTE_SHADER := preload("res://mdk/shaders/palette.gdshader")
+const PALETTE_DOUBLE_SIDED_SHADER := preload("res://mdk/shaders/palette_double_sided.gdshader")
 
 ## Special material values (palette "colors" ≥ 256, named in the level's MTI archive).
 const SPECIAL_NONE := 256  # Invisible.
@@ -22,6 +23,8 @@ class MaterialResolver:
 	## Special material values (≥ 256) that were skipped, with their triangle counts.
 	var skipped_special := {}
 	var missing: Array[String] = []
+	## Draw both faces of triangles (models).
+	var double_sided := false
 
 	var _texture_materials := {}
 	var _color_materials := {}
@@ -49,7 +52,7 @@ class MaterialResolver:
 		var texture := find_texture(material_name)
 		if texture:
 			if not _texture_materials.has(texture):
-				_texture_materials[texture] = MDKMeshBuilder.make_palette_material(texture, palette)
+				_texture_materials[texture] = MDKMeshBuilder.make_palette_material(texture, palette, double_sided)
 			return _texture_materials[texture]
 		for archive in archives:
 			if archive.colors.has(material_name):
@@ -64,7 +67,7 @@ class MaterialResolver:
 	func _get_color_material(index: int) -> Material:
 		if not _color_materials.has(index):
 			if index < 256:
-				_color_materials[index] = MDKMeshBuilder.make_color_material(palette.get_color(index))
+				_color_materials[index] = MDKMeshBuilder.make_color_material(palette.get_color(index), double_sided)
 			else:
 				_color_materials[index] = MDKMeshBuilder.make_special_material(index)
 		if not _color_materials[index]:
@@ -77,11 +80,15 @@ static func to_godot(v: Vector3) -> Vector3:
 	return Vector3(v.x, v.z, -v.y)
 
 
-## Builds the world mesh of an arena, with one surface per material.
-static func build_arena_mesh(arena: MDKArena, resolver: MaterialResolver) -> ArrayMesh:
+## Builds the world mesh of an arena (or of some of its triangles), with one surface per material.
+## `material_override` replaces the material value of every triangle (`group_set_texture`).
+static func build_arena_mesh(arena: MDKArena, resolver: MaterialResolver, triangles := PackedInt32Array(), material_override: Variant = null) -> ArrayMesh:
+	if triangles.is_empty():
+		triangles = PackedInt32Array(range(arena.triangle_materials.size()))
 	var by_material := {}
-	for tri in arena.triangle_materials.size():
-		var material := resolver.get_material(arena.triangle_materials[tri], arena.materials)
+	for tri in triangles:
+		var value: int = arena.triangle_materials[tri] if material_override == null else material_override
+		var material := resolver.get_material(value, arena.materials)
 		if not material:
 			continue
 		if not by_material.has(material):
@@ -91,13 +98,13 @@ static func build_arena_mesh(arena: MDKArena, resolver: MaterialResolver) -> Arr
 	var mesh := ArrayMesh.new()
 	for material: Material in by_material:
 		var uv_scale: Vector2 = material.get_meta(&"uv_scale", Vector2.ZERO)
-		var triangles: PackedInt32Array = by_material[material]
+		var surface_triangles: PackedInt32Array = by_material[material]
 		var positions := PackedVector3Array()
 		var uvs := PackedVector2Array()
-		positions.resize(triangles.size() * 3)
-		uvs.resize(triangles.size() * 3)
+		positions.resize(surface_triangles.size() * 3)
+		uvs.resize(surface_triangles.size() * 3)
 		var i := 0
-		for tri in triangles:
+		for tri in surface_triangles:
 			for k in 3:
 				positions[i] = to_godot(arena.vertices[arena.triangle_indices[tri * 3 + k]])
 				uvs[i] = arena.triangle_uvs[tri * 3 + k] * uv_scale
@@ -155,20 +162,23 @@ static func build_model_mesh(model: MDKModel, pose: Array, resolver: MaterialRes
 
 
 ## Builds the collision shape of an arena (every triangle, including invisible ones).
-static func build_arena_collision(arena: MDKArena) -> ConcavePolygonShape3D:
+static func build_arena_collision(arena: MDKArena, triangles := PackedInt32Array()) -> ConcavePolygonShape3D:
+	if triangles.is_empty():
+		triangles = PackedInt32Array(range(arena.triangle_materials.size()))
 	var faces := PackedVector3Array()
-	faces.resize(arena.triangle_indices.size())
-	for i in arena.triangle_indices.size():
-		faces[i] = to_godot(arena.vertices[arena.triangle_indices[i]])
+	faces.resize(triangles.size() * 3)
+	for t in triangles.size():
+		for k in 3:
+			faces[t * 3 + k] = to_godot(arena.vertices[arena.triangle_indices[triangles[t] * 3 + k]])
 	var shape := ConcavePolygonShape3D.new()
 	shape.backface_collision = true
 	shape.set_faces(faces)
 	return shape
 
 
-static func make_palette_material(texture: MDKTexture, palette: MDKPalette) -> ShaderMaterial:
+static func make_palette_material(texture: MDKTexture, palette: MDKPalette, double_sided := false) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
-	material.shader = PALETTE_SHADER
+	material.shader = PALETTE_DOUBLE_SIDED_SHADER if double_sided else PALETTE_SHADER
 	material.set_shader_parameter(&"index_texture", texture.get_index_texture())
 	material.set_shader_parameter(&"palette", palette.get_texture())
 	material.set_shader_parameter(&"frame_count", texture.frame_count)
@@ -198,9 +208,9 @@ static func make_special_material(value: int) -> Material:
 	return material
 
 
-static func make_color_material(color: Color) -> StandardMaterial3D:
+static func make_color_material(color: Color, double_sided := false) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.cull_mode = BaseMaterial3D.CULL_BACK
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED if double_sided else BaseMaterial3D.CULL_BACK
 	material.albedo_color = color
 	return material

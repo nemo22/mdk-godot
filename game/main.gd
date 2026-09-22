@@ -4,7 +4,10 @@
 ##   --level=N                 Level to load (3–8, default: the one chosen in the menu).
 ##   --viewer                  Open the free-camera level viewer instead.
 ##   --models                  Open the model viewer instead (see `model_viewer.gd`).
+##   --at=x,y,z[,yaw]          Start Kurt there instead (MDK coordinates and yaw, for tests).
 ##   --walk=seconds            Hold "move forward" for this long (for automated tests).
+##   --fire                    Hold "fire" (for automated tests).
+##   --wait=seconds            Wait this long before the screenshot.
 ##   --screenshot=path.png     Save a screenshot after loading (and walking) and quit.
 ##   --profile=seconds         Print performance and script statistics after this long, then quit.
 ##   --no-scripts              Don't run the level scripts (no objects or aliens).
@@ -33,14 +36,21 @@ func _ready() -> void:
 	# The start position is slightly below the landing pad (the original lands Kurt by parachute),
 	# so drop him from a bit higher.
 	kurt.teleport(level.get_start_position() + Vector3.UP * 3.0, level.get_start_yaw())
+	if args.has("at"):
+		var at: PackedFloat64Array = args.at.split_floats(",")
+		kurt.teleport(MDKMeshBuilder.to_godot(Vector3(at[0], at[1], at[2])), deg_to_rad(at[3] - 90.0) if at.size() > 3 else kurt.yaw)
 	if not args.has("no-scripts"):
 		scripts.setup(level, kurt)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
+	if args.has("fire"):
+		Input.action_press(&"fire")
 	if args.has("walk"):
 		Input.action_press(&"move_forward")
 		await get_tree().create_timer(float(args.walk)).timeout
 		Input.action_release(&"move_forward")
+	if args.has("wait"):
+		await get_tree().create_timer(float(args.wait)).timeout
 	if args.has("screenshot"):
 		Args.screenshot_and_quit(get_tree(), args.screenshot, 20)
 	if args.has("profile"):
@@ -83,8 +93,9 @@ func _profile(seconds: float) -> void:
 	if scripts.vm:
 		print("unimplemented opcodes (opcode: count): ", scripts.vm.unimplemented)
 		for obj in scripts.objects:
-			print("  %s_%d %s yaw %d move %d path %d anim %s speed %.1f" % [obj.type_name, obj.instance_id,
-					obj.mdk_position.round(), obj.yaw, obj.move_command, obj.path,
-					obj.animation.name if obj.animation else "-", obj.speed])
+			print("  %s_%d %s %s yaw %d move %d path %d anim %s frame %d speed %.1f health %d flags %x%s" % [
+					obj.type_name, obj.instance_id, obj.arena, obj.mdk_position.round(), obj.yaw, obj.move_command,
+					obj.path, obj.animation.name if obj.animation else "-", obj.animation_frame, obj.speed, obj.health, obj.flags,
+					" door %x" % obj.door_state if obj.flags & MDKObject.FLAG_DOOR else ""])
 		print("Kurt health %d" % kurt.health)
 	get_tree().quit()
