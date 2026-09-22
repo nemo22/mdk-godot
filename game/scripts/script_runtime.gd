@@ -58,6 +58,7 @@ var debris: MDKDebris
 ## Sniper rounds, and the object locked in the scope (`0x573a8c`: homing target and zoom limit).
 var sniper_rounds: MDKSniperRounds
 var sniper_target: MDKObject
+var air_strike: MDKAirStrike
 ## The point and direction of the last `shatter_group` (0x4d5374, 0x4d5358).
 var shatter_point := Vector3()
 var shatter_direction := Vector3(0.0, 0.0, 1.0)
@@ -158,9 +159,10 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	sniper_rounds = MDKSniperRounds.new()
 	sniper_rounds.runtime = self
 	add_child(sniper_rounds)
+	air_strike = MDKAirStrike.new(self)
 	kurt.sniper_fire = func(type: int) -> bool:
-		if type > 4:
-			return false
+		if type == 5:
+			return air_strike.call_strike(to_mdk(kurt.get_sniper_eye()), kurt_yaw, kurt.sniper_pitch)
 		return sniper_rounds.fire(type, to_mdk(kurt.get_sniper_eye()), kurt_yaw, kurt.sniper_pitch, sniper_target)
 	kurt.updraft = func(vz: float, dt: float) -> float:
 		return fans.query(current_arena, to_mdk(kurt.global_position), vz, MDKFans.MASK_KURT, dt)
@@ -297,6 +299,7 @@ func _tick() -> void:
 	effects.update(1.0)
 	debris.update(1.0)
 	sniper_rounds.update(1.0)
+	air_strike.update(1.0)
 	_update_sniper_target()
 	# Only the objects of Kurt's arena are updated (0x43c7dc; the original also updates the arena
 	# seen through an open door).
@@ -472,6 +475,63 @@ func _update_sniper_target() -> void:
 	if sniper_target:
 		var bounds := get_world_bounds(sniper_target)
 		kurt.zoom_limit = minf(Kurt.ZOOM_MIN, 0.375 * maxf(bounds.size.z, 10.0) / maxf(kurt_position.distance_to(bounds.get_center()), 1.0))
+
+
+## `special_130` (0x45d140): stamps a bullet hole (`BHOLE`, or `BHOLE2` with `option` 0) onto the
+## texture of the object's face that a sniper round hit last, at the hit point's texel (the UVs of
+## the face interpolated there), keeping the hole's transparent pixels. Textures are shared, so every
+## object using it gets the hole. The port finds the face nearest to the point on the hit part (the
+## original keeps the face the round's test found).
+func stamp_bullet_hole(obj: MDKObject) -> void:
+	if obj.shot_part <= 0 or not obj.model or obj.shot_part > obj.model.parts.size():
+		return
+	var part_index := obj.shot_part - 1
+	var part := obj.model.parts[part_index]
+	var vertices: PackedVector3Array = obj.get_pose()[part_index]
+	if vertices.is_empty():
+		return
+	var point := (obj.shot_point - obj.mdk_position).rotated(Vector3.BACK, -deg_to_rad(obj.yaw)) / obj.model_scale
+	var best := -1
+	var best_distance := INF
+	var best_weights := Vector3()
+	var resolver := get_resolver(obj.arena)
+	for tri in part.triangle_materials.size():
+		var value := part.triangle_materials[tri]
+		if value < 0 or value >= obj.model.materials.size() or not resolver.find_texture(obj.model.materials[value]):
+			continue
+		var a := vertices[part.triangle_indices[tri * 3]]
+		var b := vertices[part.triangle_indices[tri * 3 + 1]]
+		var c := vertices[part.triangle_indices[tri * 3 + 2]]
+		var normal := (b - a).cross(c - a)
+		if normal.length_squared() == 0.0:
+			continue
+		normal = normal.normalized()
+		var on_plane := point - normal * normal.dot(point - a)
+		var weights := Geometry3D.get_triangle_barycentric_coords(on_plane, a, b, c)
+		weights = weights.clamp(Vector3.ZERO, Vector3.ONE)
+		weights /= maxf(weights.x + weights.y + weights.z, 1e-6)
+		var closest := a * weights.x + b * weights.y + c * weights.z
+		var distance := closest.distance_squared_to(point)
+		if distance < best_distance:
+			best_distance = distance
+			best = tri
+			best_weights = weights
+	if best < 0:
+		return
+	var texture := resolver.find_texture(obj.model.materials[part.triangle_materials[best]])
+	var uv := part.triangle_uvs[best * 3] * best_weights.x + part.triangle_uvs[best * 3 + 1] * best_weights.y 			+ part.triangle_uvs[best * 3 + 2] * best_weights.z
+	var hole := kurt.sprites.get_image("BHOLE" if option else "BHOLE2")
+	var origin := Vector2i(roundi(uv.x) - hole.width / 2, roundi(uv.y) - hole.height / 2)
+	for y in hole.height:
+		for x in hole.width:
+			var index := hole.indices[y * hole.width + x]
+			if index == 0:
+				continue
+			var tx := posmod(origin.x + x, texture.width)
+			var ty := posmod(origin.y + y, texture.height)
+			texture.indices[ty * texture.width + tx] = index
+	texture.get_index_texture().update(Image.create_from_data(texture.width, texture.height * texture.frame_count, false,
+			Image.FORMAT_R8, texture.indices))
 
 
 ## The first active object of a type (the cutscenes' targets).

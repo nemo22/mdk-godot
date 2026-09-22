@@ -1,6 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://game/menu/main_menu.gd" id="1_menu"]
+[ext_resource type="Script" path="res://game/menu/menu_items.gd" id="2_items"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -46,6 +47,7 @@ grow_horizontal = 2
 grow_vertical = 0
 theme_override_constants/separation = 0
 alignment = 1
+script = ExtResource("2_items")
 
 [node name="Music" type="AudioStreamPlayer" parent="."]
 

@@ -381,6 +381,16 @@ func _update_mesh() -> void:
 	_mesh_instance.mesh = _mesh_cache[key]
 
 
+## The vertices of each part in the current pose (model space).
+func get_pose() -> Array:
+	if not animation:
+		return model.get_rest_pose()
+	var bake_key := "%s|%s" % [model.get_instance_id(), animation.get_instance_id()]
+	if not _baked.has(bake_key):
+		_baked[bake_key] = animation.bake(model)
+	return _baked[bake_key][animation_frame]
+
+
 ## Bounds of each model part in the current pose (model space).
 func get_part_bounds() -> Array:
 	var key := "%s|%s|%d" % [model.get_instance_id(), animation.get_instance_id() if animation else 0, animation_frame]

@@ -241,8 +241,10 @@ floor normal `0x573bfc`… = (0, 0, 1), state 807. The chain gun stops.
   the target at 150 units/s, 30 units above the arena, dropping 9 `X_TOOTH` bombs (grenades) around
   it; from level 6 on there's only one strike and it dives into the target (a 450-damage blast).
 - **Sounds**: `SNIPERON`, `SNIPEROFF`, `BREATH`, `ZOOM`, `SNIPERSHOT`, `SNIPRELD`, `RASPBER`.
-- The port has entering and leaving, the controls, the zoom and lock, the screen (without the
-  round cameras and the 3D clip) and rounds of types 0–4; the air strike isn't done yet.
+- The port has all of it but the 3D clip on the screen and the iris around the air strike's target
+  (`MDKSniperRounds`, `MDKAirStrike`, `SniperOverlay`; the round cameras are `SubViewport`s). The
+  air strike's curve goes through the same 5 points with Godot's `Curve3D`, not the original's
+  spline parameters (0.5, 1.0, 0.5 ❓).
 
 ## The minecrawler's timer (0x4240c4)
 

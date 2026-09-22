@@ -61,6 +61,11 @@ class Round:
 	var path := 0
 	var path_time := 0.0
 	var visual: MDKObject
+	## The round's camera (0x461d80): its distance behind the round (growing by 10/s up to 10) and,
+	## after a hit, how long it keeps watching (30 ticks).
+	var camera_distance := 0.0
+	var camera_position := Vector3()
+	var watch := 0.0
 
 
 var runtime: MDKScriptRuntime
@@ -98,11 +103,33 @@ func fire(type: int, eye: Vector3, yaw: float, pitch: float, target: MDKObject) 
 	round.yaw_rate = 0.0
 	round.target = target if type == 1 or type == 3 else null
 	round.target_part = _head_part(target) if round.target else -1
+	round.camera_distance = 0.0
+	round.camera_position = eye
+	round.watch = 0.0
 	if type == 4:
 		round.speed = SPEED[4] * cos(deg_to_rad(pitch))
 		round.vertical = -SPEED[4] * sin(deg_to_rad(pitch))
 	_make_visual(round)
 	return true
+
+
+## What the camera of slot `index` shows (0x461bcc): `{"transform": Transform3D}` (Godot space)
+## while it watches, or `{"fill": palette index}` (0 empty, 0x3c after a hit, 0xf4 after a kill or
+## an explosion, −1 after a miss: the `SNIPERGA` animation).
+func get_camera(index: int) -> Dictionary:
+	var round := _rounds[index]
+	if round.state == State.FREE:
+		return {"fill": 0}
+	if round.state == State.FLYING or round.watch > 0.0:
+		var direction := _direction(round)
+		var look := MDKMeshBuilder.to_godot(direction)
+		return {"transform": Transform3D(Basis.looking_at(look, Vector3.UP), MDKMeshBuilder.to_godot(round.camera_position))}
+	match round.state:
+		State.HIT:
+			return {"fill": 0x3c}
+		State.DEAD:
+			return {"fill": -1, "time": round.linger}
+	return {"fill": 0xf4}
 
 
 ## `bomb_follow_path` (opcode 28): the mortar round that just hit a triangle group follows a path.
@@ -143,6 +170,7 @@ func update(ticks: float) -> void:
 			continue
 		if round.state != State.FLYING:
 			round.linger -= ticks
+			round.watch -= ticks
 			if round.linger <= 0.0:
 				round.state = State.FREE
 			continue
@@ -162,6 +190,9 @@ func update(ticks: float) -> void:
 				_explode(round, 50.0 if round.type == 4 else 25.0, null)
 			else:
 				_end(round, State.DEAD, 30.0)
+		if round.state == State.FLYING:
+			round.camera_distance = minf(round.camera_distance + 10.0 * dt, 10.0)
+			round.camera_position = round.position - _direction(round) * round.camera_distance
 		if round.visual:
 			round.visual.visible = round.state == State.FLYING
 			round.visual.mdk_position = round.position
@@ -352,5 +383,6 @@ func _explode(round: Round, radius: float, source: MDKObject) -> void:
 func _end(round: Round, state: State, linger: float) -> void:
 	round.state = state
 	round.linger = linger
+	round.watch = 30.0 if state == State.KILLED or state == State.HIT else 0.0
 	if round.visual:
 		round.visual.visible = false

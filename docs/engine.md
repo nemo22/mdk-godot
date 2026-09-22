@@ -678,7 +678,9 @@ get a hole instead of being hidden when `if_option 0`).
   dominant axes) to interpolate the UVs.
 - `BHOLE` (`BHOLE2` when `0x5742dc` = 0) is blitted 1:1 centred there (0x4048f8, only non-zero
   pixels), wrapping at the texture size, and the texture is uploaded again (0x4749c4, 0x474978).
-  The texture is shared, so every object using it gets the hole. Not in the port yet.
+  The texture is shared, so every object using it gets the hole. The port (`stamp_bullet_hole`)
+  keeps the part and point of the last sniper round's hit and takes the part's face nearest to the
+  point in the current pose.
 
 ## Globals
 

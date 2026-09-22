@@ -664,6 +664,9 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 		28:  # bomb_follow_path: the sniper mortar round that just hit a triangle group follows a path
 			runtime.sniper_rounds.guide_last_mortar(o[0])
 
+		130:  # special_130: a bullet hole on the texture where a sniper round hit
+			runtime.stamp_bullet_hole(obj)
+
 		229:  # turn_and_jump_to_dest: [turn rate, action while jumping]
 			runtime.motion.turn_and_jump(obj, o[0])
 			return _branch(obj, ins, obj.move_command == 229)

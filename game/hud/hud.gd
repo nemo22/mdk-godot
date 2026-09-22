@@ -44,7 +44,7 @@ func setup(p_kurt: Kurt, sprites: MDKBni, palette: MDKPalette, fti: MDKFti) -> v
 	var digits := sprites.get_image("SNIP_TXT")
 	_digits = _make_texture(digits, palette)
 	_digit_height = digits.height
-	_sniper.setup(sprites, palette)
+	_sniper.setup(sprites, palette, self)
 	var pickups := sprites.get_animation("PICKUPS")
 	for i in pickups.frame_count:
 		_icons.push_back(_make_texture(pickups.get_frame(i), palette))
@@ -109,7 +109,7 @@ func _draw() -> void:
 		# The sniper screen covers the whole 640×480 screen, centred.
 		var s1 := size.y / SniperOverlay.SCREEN.y
 		draw_set_transform(Vector2((size.x - SniperOverlay.SCREEN.x * s1) / 2.0, 0.0), 0.0, Vector2(s1, s1))
-		_sniper.draw(self, kurt)
+		_sniper.draw(self, kurt, scripts.sniper_rounds if scripts else null)
 		# Health in the frame's panel, where the normal view draws `SC_STAT` in the 600×360 view.
 		var panel := SniperOverlay.VIEW_ORIGIN + Vector2(600 - (_panel.get_width() + 16), VIEW_HEIGHT - (_panel.get_height() + 10))
 		if kurt.health > 20 or _blink < 16:

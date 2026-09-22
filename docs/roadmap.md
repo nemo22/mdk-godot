@@ -10,7 +10,7 @@
   in the original ones).
 - Model and animation formats (models section and CMI models), model viewer.
 - Level viewer (`--viewer`) and model viewer (`--models`).
-- Scripts: bytecode decoder (every script of the game) and VM with 234 of the 236 opcodes the levels
+- Scripts: bytecode decoder (every script of the game) and VM with 235 of the 236 opcodes the levels
   use; arena scripts, DTI aliens, spawned objects, commands between objects, partners, group hit
   scripts.
 - Object movement like the original: spline paths, walking, flying, chasing, formations,
@@ -33,17 +33,17 @@
   aliens, level 6's shooting galleries, the camera tilting up at bosses.
 - Aliens plan detours around walls (`plan_move`), replan when stuck, and bank into their turns.
 - Sniper mode: the scope screen, zoom, target lock, the clip and rounds (bullets, homing bullets,
-  grenades, homing grenades, the mortar and its guidance by `bomb_follow_path`).
+  grenades, homing grenades, the mortar and its guidance by `bomb_follow_path`), Bones' air strike,
+  the round cameras, bullet holes.
 - Options in the main menu (volumes, music filter, mouse, fullscreen, difficulty), saved in
   `user://settings.cfg`; music and effects on their own buses with a limiter.
 
 ## Next
 
-1. **Aliens and scripts**: bullet holes (130), sparks
+1. **Aliens and scripts**: sparks
    and explosions' debris, the full-screen strike of Bones and the end of level break-up, the
    second arena seen through open doors.
-2. **Sniper mode**: Bones' air strike, the round cameras, the 3D clip on the screen; saving and
-   loading.
+2. **Sniper mode**: the 3D clip on the screen and the air strike's iris; saving and loading.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
 4. **Movement details**: ledge grab, slippery floors, conveyors, updrafts, camera roll, pushing Kurt
    away from walls instead of moving the camera closer, stopping on walls hit head-on.
@@ -54,7 +54,7 @@
 
 - Main menu (new game, load game, options, quit), pause menu, level select (partly done).
 - Options: sound volumes, music filter, mouse, fullscreen and difficulty are done; still to do: key
-  bindings, the enhanced mode below, a pause menu in the game.
+  bindings, the enhanced mode below. The pause menu (Esc) has resume, options, main menu, quit.
 - Original assets where possible (`MISC/OPTIONS.BNI`, `MISC/MDKFONT.FTI`, menu video `MDK12.FLC`).
 
 ## Enhanced graphics mode

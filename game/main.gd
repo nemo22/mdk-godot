@@ -17,10 +17,13 @@
 ##   --no-scripts              Don't run the level scripts (no objects or aliens).
 ##   --town=seconds            The minecrawler flattens the town after this long (for tests).
 ##   --spawn-box=TEXTURE       Create a `spawn_box` object showing that texture in front of Kurt.
-##   --fx                      Spawn slime drops and bubbles in front of Kurt (effects test).
+##   --fx                      Effects test after the delay: slime drops and bubbles in front of
+##                             Kurt, a wound and bullet holes on the first grunt (`XG`).
 ##   --shatter=GROUP           Shatter a triangle group of Kurt's arena (`shatter_group` test).
 ##   --probe=x,y               Print the arena surfaces above and below that point.
-##   --sniper[=zoom]           Enter sniper mode after the delay (optionally zoomed, 1 to 0.25).
+##   --sniper[=zoom[,pitch]]   Enter sniper mode after the delay (zoom 1 to 0.25, pitch in degrees,
+##                             positive looks down).
+##   --pause                   Open the pause menu after the delay.
 ##   --event=N                 Run `special_event` N after the delay (cutscenes, end of level).
 extends Node3D
 
@@ -51,6 +54,9 @@ func _ready() -> void:
 			sprites.add_animation(animation_name, animation)
 	kurt.setup(sprites, level.get_palette(), level.get_sound)
 	hud.setup(kurt, sprites, level.get_palette(), MDKFti.load_file(MDKData.path("MISC/MDKFONT.FTI")))
+	var pause := PauseMenu.new()
+	pause.name = "PauseMenu"
+	add_child(pause)
 	kurt.died.connect(_on_kurt_died)
 	kurt.inventory.difficulty = Settings.difficulty
 	if args.has("health"):
@@ -100,12 +106,23 @@ func _ready() -> void:
 		var alien := scripts.find_object_named("XG")
 		if alien:
 			scripts.effects.attach(alien, 2, 3)
+			# Bullet holes on every part, at the middle of each part's box.
+			for part in alien.model.parts.size():
+				alien.shot_part = part + 1
+				alien.shot_point = scripts.get_world_bounds(alien, alien.get_part_bounds()[part]).get_center()
+				for i in 4:
+					scripts.stamp_bullet_hole(alien)
 	if args.has("probe"):
 		_probe(args.probe.split_floats(","))
 	if args.has("sniper"):
 		kurt._enter_sniper(true)
 		if args.sniper != "":
-			kurt.zoom = float(args.sniper)
+			var values: PackedFloat64Array = args.sniper.split_floats(",")
+			kurt.zoom = values[0]
+			if values.size() > 1:
+				kurt.sniper_pitch = values[1]
+	if args.has("pause"):
+		get_node(^"PauseMenu")._open()
 	if args.has("event"):
 		scripts.special_event(scripts.get_arena_state(scripts.current_arena).controller, int(args.event))
 	if args.has("use"):
@@ -170,10 +187,7 @@ func _on_kurt_died() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		# There's no pause menu yet: go back to the main menu.
-		get_tree().change_scene_to_file("res://game/menu/main_menu.tscn")
-	elif event is InputEventMouseButton and event.pressed:
+	if event is InputEventMouseButton and event.pressed:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
