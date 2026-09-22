@@ -18,7 +18,7 @@ def main():
             for p, (opc, vals, _) in sorted(walk(d, start).items()):
                 if opc in opcodes and p not in seen:
                     seen.add(p)
-                    print("level %d %-24s %06x %3d %s %s" % (level, name, p, opc, SPEC[opc][1]["mnemonic"], vals))
+                    print("level %d %-24s %06x %3d %s %s" % (level, name, p, opc, (SPEC[opc][1]["mnemonic"] if opc in SPEC else "?"), vals))
 
 
 if __name__ == "__main__":

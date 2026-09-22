@@ -38,12 +38,16 @@ func update(obj: MDKObject) -> void:
 			obj.set_texture_frame(int(obj.effect_time))
 		return
 	if obj.path:
+		if obj.flags & MDKObject.FLAG_PATH_SPEED_BY_KURT:
+			_update_path_speed(obj)
 		_update_path(obj)
 	_update_command(obj)
 	if obj.dead:
 		return
 	if obj.flags & MDKObject.FLAG_GRAVITY:
-		obj.velocity.z = maxf(obj.velocity.z - obj.gravity * dt, TERMINAL_VELOCITY)
+		obj.velocity.z -= obj.gravity * dt
+		_updraft(obj)
+		obj.velocity.z = maxf(obj.velocity.z, TERMINAL_VELOCITY)
 	_apply_velocity(obj)
 	if obj.dead:
 		return
@@ -78,6 +82,38 @@ func path_key_frame(path: int, key: int) -> int:
 func _path_vector(path: int, key: int, field: int) -> Vector3:
 	var offset := path + 8 + key * 40 + field * 12
 	return Vector3(_bytes.decode_float(offset), _bytes.decode_float(offset + 4), _bytes.decode_float(offset + 8))
+
+
+## Fans lift objects with gravity (0x45e74c; not rolling objects in level 4); Kurt's thrown items
+## (but the mortar) also lose most of their horizontal speed in them.
+func _updraft(obj: MDKObject) -> void:
+	if runtime.level.number == 4 and obj.flags & MDKObject.FLAG_ROLLING:
+		return
+	var vz := runtime.fans.query(obj.arena, obj.mdk_position, obj.velocity.z, MDKFans.MASK_OBJECTS, dt)
+	if is_nan(vz):
+		return
+	obj.velocity.z = vz
+	if obj.flags & 0x45000 == 0x1000 and obj.thrown_kind != KurtInventory.Item.MORTAR:
+		obj.velocity.x *= 0.1
+		obj.velocity.y *= 0.1
+
+
+## `path_speed_by_kurt` (opcode 164, 0x43c258): the path speed goes towards the speed for Kurt
+## being ahead of, around, or behind the set distance (measured along the object's heading), by
+## `(near − far) × 0.5` per second.
+func _update_path_speed(obj: MDKObject) -> void:
+	var heading := Vector2.from_angle(deg_to_rad(obj.yaw))
+	var ahead := (obj.mdk_position.x - runtime.kurt_position.x) * heading.x \
+			+ (obj.mdk_position.y - runtime.kurt_position.y) * heading.y
+	var distance: float = obj.path_speeds[0]
+	var target: float = obj.path_speeds[1]
+	if ahead <= distance + 5.0:
+		target = obj.path_speeds[2] if ahead >= distance - 5.0 else obj.path_speeds[3]
+	var step: float = (obj.path_speeds[3] - obj.path_speeds[1]) * dt * 0.5
+	if obj.path_speed <= target:
+		obj.path_speed = minf(obj.path_speed + step, target)
+	else:
+		obj.path_speed = maxf(obj.path_speed - step, target)
 
 
 ## Position on a path at `time` (in frames), relative to the path's origin (`spline_eval` 0x43c0f8).
@@ -173,6 +209,8 @@ func _update_command(obj: MDKObject) -> void:
 			_follow_attachment(obj)
 		88:
 			_move_forward(obj)
+		30:
+			_update_chain(obj)
 		15:
 			# The alarm: `ALERT` every 32 ticks, and `if_alarm` holds for 10 ticks.
 			if obj.arena == runtime.current_arena:
@@ -184,6 +222,38 @@ func _update_command(obj: MDKObject) -> void:
 			if obj.parameter_timer >= obj.parameter * 0.5 and obj.contact_flags & MDKObject.CONTACT_FLOOR:
 				obj.move_command = 0
 				obj.velocity = Vector3.ZERO
+
+
+## A chain link (movement command 30, `spawn_chain`): the links hang off the head object, each
+## turned 90° more than the one before, with its first reference point on the previous one's
+## second. Only the first link (id 0) places the whole chain; a link whose leader or any link
+## before it is gone detaches and stops.
+func _update_chain(link: MDKObject) -> void:
+	var leader := link.leader
+	if not leader or leader.dead:
+		link.leader = null
+		link.move_command = 0
+		return
+	var links: Array[MDKObject] = []
+	for other in runtime.objects:
+		if other.leader == leader and not other.dead:
+			links.push_back(other)
+	links.sort_custom(func(a: MDKObject, b: MDKObject) -> bool: return a.instance_id < b.instance_id)
+	for i in link.instance_id:
+		if i >= links.size() or links[i].instance_id != i:
+			link.leader = null
+			link.move_command = 0
+			return
+	if link.instance_id != 0:
+		return
+	var previous := leader
+	for i in links.size():
+		if links[i].instance_id != i:
+			break
+		var current := links[i]
+		current.yaw = fposmod(leader.yaw + 90.0 * i, 360.0)
+		current.mdk_position += previous.get_reference_point(1) - current.get_reference_point(0)
+		previous = current
 
 
 ## Turns the object towards a point by at most `TURN_SPEED` × dt. Returns the angle that was

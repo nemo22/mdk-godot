@@ -14,6 +14,7 @@ const FLAG_LOOP := 0x8
 const FLAG_NOT_SOLID := 0x10
 ## The chain gun doesn't aim at the object.
 const FLAG_NOT_TARGET := 0x20
+const FLAG_ROLLING := 0x40
 const FLAG_NO_BANKING := 0x80
 const FLAG_NOT_SOLID_2 := 0x800
 ## Some parts take damage separately (`set_weak_parts`).
@@ -28,6 +29,8 @@ const FLAG_PICKUP := 0x200000
 const FLAG_PATH_PUSHES := 0x8000000
 const FLAG_BOUNCES := 0x20000000
 const FLAG_PATH_ONCE := 0x400
+## The path speed follows Kurt's distance ahead (opcode 164).
+const FLAG_PATH_SPEED_BY_KURT := 0x10000000
 ## Contact flags (`obj+0x14c`), set by the movement code each frame.
 const CONTACT_COLLIDED := 0x1
 const CONTACT_FLOOR := 0x2
@@ -141,6 +144,9 @@ var parameter_timer := 0.0
 var path := 0
 var path_time := 0.0
 var path_speed := 1.0
+## `path_speed_by_kurt` (opcode 164, `obj+0x302`): distance, and the path speeds when Kurt is
+## farther ahead, around that distance, or nearer.
+var path_speeds := [0.0, 0.0, 0.0, 0.0]
 var path_stop := -1
 var path_origin := Vector3()
 var path_yaw_offset := 0.0

@@ -12,6 +12,7 @@ var bytes := PackedByteArray()
 var entries := {}
 
 var _sounds := {}
+var _animations := {}
 
 
 static func load_file(path: String) -> MDKSni:
@@ -44,6 +45,15 @@ func get_sound(entry_name: String) -> AudioStreamWAV:
 		var entry: Array = entries[entry_name]
 		_sounds[entry_name] = MDKSound.load_wav(bytes.slice(entry[0], entry[0] + entry[1]))
 	return _sounds[entry_name]
+
+
+## Returns a sprite animation of the archive (Kurt's extra frames in `LEVELnS.SNI`), or `null`.
+func get_animation(entry_name: String) -> MDKSpriteAnimation:
+	if not entries.has(entry_name) or is_sound(entry_name):
+		return null
+	if not _animations.has(entry_name):
+		_animations[entry_name] = MDKSpriteAnimation.parse(entry_name, bytes, entries[entry_name][0] + 4)
+	return _animations[entry_name]
 
 
 ## Returns every sound of the archive, by name.

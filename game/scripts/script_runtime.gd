@@ -54,6 +54,7 @@ var vm: MDKScriptVM
 var motion: MDKObjectMotion
 var behaviors: MDKObjectBehaviors
 var items: MDKItems
+var fans: MDKFans
 var global_variables := [0.0, 0.0, 0.0, 0.0]
 var global_flags := 0
 ## Kurt's position (MDK coordinates) and the target of alien scripts (Kurt, or a decoy).
@@ -106,6 +107,9 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	motion = MDKObjectMotion.new(self)
 	behaviors = MDKObjectBehaviors.new(self)
 	items = MDKItems.new(self)
+	fans = MDKFans.new(self)
+	kurt.updraft = func(vz: float, dt: float) -> float:
+		return fans.query(current_arena, to_mdk(kurt.global_position), vz, MDKFans.MASK_KURT, dt)
 	kurt.item_used.connect(items.use_item)
 	kurt.bomb_triggered.connect(items.trigger_bomb)
 	kurt.can_use_item = items.can_use
@@ -602,6 +606,110 @@ func set_loop_sound(obj: MDKObject, sound_name: String) -> void:
 ## Looks for cover (`find_cover_spot`): a DTI record of type 5 of the object's arena, 9–400 units
 ## away, no farther than Kurt, closer to Kurt than the object, hidden from Kurt but visible to the
 ## object. One of the 3 nearest is chosen (nearer ones more likely) and the object goes there
+## `wind_zone` (opcode 224, 0x4579e0): while Kurt is inside one of the arena's type-9 hotspot
+## boxes, the wind blows him along `yaw` at `speed`, sliding him on his back (`damp_buttslide`);
+## in the air without sliding it only pulls him down twice as fast. `enable` 0 ends the slide.
+func wind_zone(arena: String, enable: bool, yaw: float, speed: float) -> void:
+	if not enable:
+		kurt.stop_slide()
+		return
+	for entry in level.dti.arenas:
+		if entry.name != arena:
+			continue
+		for record: Dictionary in entry.records:
+			if record.type != 9 or not AABB(record.position, record.box_end - record.position).has_point(kurt_position):
+				continue
+			if kurt.sliding or kurt.is_on_floor():
+				kurt.start_slide()
+				kurt.yaw = deg_to_rad(yaw - 90.0)
+				kurt.slide_accel(Vector2.from_angle(deg_to_rad(yaw)) * speed, TICK)
+			else:
+				kurt.velocity.y -= Kurt.SLIDE_GRAVITY * TICK
+			return
+
+
+## Picks one of the arena's type-8 waypoints at random (`pick_waypoint8` 0x460a6c) and makes it
+## the destination (movement command 221). Every waypoint gets a weight of at least 1:
+## `500 − distance` (2D), plus `200 − distance to Kurt` when Kurt is closer than 200, plus 250 when
+## the object is closer to Kurt than to the waypoint and the waypoint is farther from Kurt than
+## from the object, less half the height difference. Mode 0 takes the waypoints 50–500 units away,
+## mode 1 those whose id is within 3 of the nearest one.
+func pick_waypoint8(obj: MDKObject, mode: int) -> void:
+	obj.move_command = 0
+	var records: Array[Dictionary] = []
+	for entry in level.dti.arenas:
+		if entry.name == obj.arena:
+			for record: Dictionary in entry.records:
+				if record.type == 8:
+					records.push_back(record)
+	var nearest_id := 0
+	if mode == 1:
+		var nearest := 999999.0
+		for record in records:
+			var distance: float = obj.mdk_position.distance_to(record.position)
+			if distance < nearest:
+				nearest = distance
+				nearest_id = record.id
+	var weights: Array[int] = []
+	var total := 0
+	for record in records:
+		var spot: Vector3 = record.position
+		var distance := _distance_2d(spot, obj.mdk_position)
+		var weight := 0
+		if mode == 1 and absi(record.id - nearest_id) <= 3 or mode != 1 and distance >= 50.0 and distance <= 500.0:
+			var to_kurt := _distance_2d(spot, kurt_position)
+			weight = roundi(500.0 - distance)
+			if to_kurt < 200.0:
+				weight = roundi(weight + 200.0 - to_kurt)
+			if _distance_2d(obj.mdk_position, kurt_position) < distance and to_kurt > distance:
+				weight += 250
+			weight = roundi(weight - absf(spot.z - obj.mdk_position.z) * 0.5)
+			weight = maxi(weight, 1)
+		weights.push_back(weight)
+		total += weight
+	if total == 0:
+		return
+	var pick := randi() % total
+	for i in records.size():
+		pick -= weights[i]
+		if pick < 0:
+			obj.move_command = 221
+			obj.move_destination = records[i].position
+			obj.waypoint = obj.move_destination
+			obj.contact_flags &= ~MDKObject.CONTACT_STUCK
+			return
+
+
+static func _distance_2d(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.y - b.y).length()
+
+
+## Looks for a type-5 waypoint to advance to (`find_advance_spot`, like `find_cover_spot` without
+## the visibility tests and with 2D distances): 5–400 units away, no farther from the object than
+## Kurt is and closer to Kurt than the object. It becomes the destination (movement command 197).
+func find_advance_spot(obj: MDKObject) -> void:
+	obj.move_command = 0
+	var spots: Array[Vector3] = []
+	var to_kurt := _distance_2d(obj.mdk_position, kurt_position)
+	for entry in level.dti.arenas:
+		if entry.name != obj.arena:
+			continue
+		for record: Dictionary in entry.records:
+			if record.type != 5:
+				continue
+			var spot: Vector3 = record.position
+			var distance := _distance_2d(spot, obj.mdk_position)
+			if distance < 5.0 or distance > 400.0 or distance > to_kurt or _distance_2d(spot, kurt_position) >= to_kurt:
+				continue
+			spots.push_back(spot)
+	if spots.is_empty():
+		return
+	obj.move_command = 197
+	obj.move_destination = spots[randi() % spots.size()]
+	obj.waypoint = obj.move_destination
+	obj.contact_flags &= ~MDKObject.CONTACT_STUCK
+
+
 ## (movement command 43); otherwise the object stops.
 func find_cover_spot(obj: MDKObject) -> void:
 	var spots: Array[Vector3] = []

@@ -44,6 +44,11 @@ func get_image(entry_name: String) -> MDKTexture:
 
 
 ## Returns a sprite animation entry (`u32 size`, then the animation).
+## Adds an animation from another archive (the levels keep Kurt's extra frames in `LEVELnS.SNI`).
+func add_animation(entry_name: String, animation: MDKSpriteAnimation) -> void:
+	_animations[entry_name] = animation
+
+
 func get_animation(entry_name: String) -> MDKSpriteAnimation:
 	if not _animations.has(entry_name):
 		_animations[entry_name] = MDKSpriteAnimation.parse(entry_name, bytes, entries[entry_name][0] + 4)

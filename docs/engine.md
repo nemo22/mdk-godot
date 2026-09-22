@@ -129,7 +129,7 @@ parameter in `obj+0x11f`:
 | 1 | `command_objects` command 1 | keeps a formation place around the leader `obj+0x138` (below) |
 | 6 | `move_to_target` | chases the target, flying (below) |
 | 15 | `alarm` | plays an alarm sound every 32 frames while in Kurt's arena and sets `0x573aec = 10` |
-| 30 | `spawn_chain` | chain of objects following each other (snake-like aliens) |
+| 30 | `spawn_chain` | a link of a chain, placed from the head's transform (below) |
 | 43 | `move_near_target`, commands | goes to the destination (walking or flying) |
 | 61 | `fire` | projectile |
 | 74 | `attach_to` | stays attached to another object: its reference point `obj+0x276` is kept on the other's point `obj+0x277`, same yaw and pitch |
@@ -415,7 +415,7 @@ effects (0x45fec4, hit type −10). For a triangle of group g (1–16):
   `if_hit_weapon` tests). Returns 1.
 
 Level 5 uses this for its fans: `if_hit_weapon -8` means only the nuke destroys them.
-## Fans and conveyors 🟡 (not in the port yet)
+## Fans and conveyors 🟡
 
 Each arena has a list of fans and conveyors (`arena+0x45e`, taken from a free list `0x573f8c`,
 fatal "No spare fans"). An entry: `+0 next, +4 arena, +8 name, +0xc id (hotspot id or triangle
@@ -441,7 +441,25 @@ rate`.
   triangle group (wrapping at ±512) and pushes what stands on the group (`conveyor_push` 0x413c80:
   box fields `+0x20..+0x28` as a direction × strength × dt); a fan spawns a rising particle at a
   random point of its box (z0 + 0.25) one frame in 8 (0x4052d4, pool `arena+0x5c`).
-- `wind_zone` (224) uses the type-9 hotspots (see [script_opcodes.md](script_opcodes.md)).
+- `wind_zone` (224) uses the type-9 hotspots to slide Kurt, see
+  [gameplay.md](gameplay.md#sliding-damp_buttslide-0x468db8). Conveyors aren't in the port yet.
+
+## Chains (`spawn_chain` 29, movement command 30)
+
+Snake-like aliens: a head object with links hanging off it (level 3's flying bombers, level 7's
+`XBANG` and `XTANK`, level 8's `XBSHIP`; the levels always create 1–3 links at a time).
+
+- `spawn_chain count, model, script` (0x447c9a) creates `count` objects of that model at the head's
+  position, each with kind 7, movement command 30, leader `obj+0x138` = the head and id
+  `obj+0x146` = (links left) + (highest id of the head's links so far) + 1, so calling it again
+  extends the same chain and id 0 is the link nearest the head. The head knows nothing about them.
+- Each frame the link with id 0 places the whole chain (0x45bb3f): link `i` takes the yaw
+  `head yaw + 90° × i` and is moved so that its first reference point sits on the previous link's
+  second one (the head is the first "previous"). Nothing else moves them: no velocity, speed,
+  waypoint or frame time, so a chain is rigid and frame rate independent.
+- Before that, every link checks that its leader is alive and that the links with the ids below it
+  exist; the first link that finds a gap (or a dead head) detaches (`obj+0x138` = 0, movement
+  command 0) and is left to its own script.
 
 ## Globals
 

@@ -133,6 +133,37 @@ by 1 unit, and 5 downwards. Taken pickups get flags 0x41000 and vanish in 30 tic
   `SKULL` image fades in at the centre of the view (`0x573b70` going up to 255), then the game loads
   the last saved game (`LASTGAME`).
 
+## Sliding (`damp_buttslide` 0x468db8)
+
+Kurt slides down the wind tunnels of level 6 on his back. The script opcode `wind_zone` (224) starts
+it (0x468b64) while Kurt is inside a type-9 hotspot box of the arena and he stands on a floor or is
+already sliding: `0x573be8` = 1, speed cap `0x573bf8` = 50, slide velocity `0x573bf0`/`0x573bf4` = 0,
+floor normal `0x573bfc`… = (0, 0, 1), state 807. The chain gun stops.
+
+- **States** (`K_SLIP`, `K_SLIDE`, `K_FSLIDE`, `K_BSLIDE`, in `LEVEL6S.SNI`): 807 `K_SLIP` plays
+  once, then 808 `K_SLIDE` loops; 809 while accelerating and 810 while braking.
+- **Every frame**: the floor normal is smoothed (`0.8 × old + 0.2 × new` horizontally, half and half
+  in z) and the slope pushes by `10 × normal`; with no floor the push stays and the air timer
+  `0x573a48` counts ticks. The push and the wind go through `slide_accel(ax, ay)` (0x468be0), which
+  per axis adds `a² × dt` above 0.1, subtracts it below −0.1, and otherwise brakes by 2 u/s²
+  towards 0.
+- The heading is `atan2(vy, vx)` and becomes Kurt's yaw while `|vx| + |vy| > 0.5`; turning left or
+  right turns him by 45°/s. Moving forward accelerates by 35 u/s² (above 15 u/s) and raises the cap
+  by 10/s up to 80; braking slows by 15 u/s² down to 15 u/s and lowers the cap by 25/s down to 15;
+  with no input the cap goes back to 50 at 20/s. There is no other friction.
+- Kurt moves at `(cos yaw, sin yaw) × min(speed, cap)`, and falls at twice the normal gravity
+  (128 u/s²). When a wall stops him (less than half of a move of over 0.5 units), the slide is
+  aimed half way towards what he actually moved and the speed averaged with it.
+- The camera rolls with the slope (`0x573910`, a tenth per frame towards
+  `90° − atan2(n.z, n.x × ûy − n.y × ûx)`).
+- `BUTSLIDE` loops (at 15000 Hz instead of 11025 while accelerating), `BUTBRAKE` plays while braking.
+- **Out of it**: sliding blocks jumping, the chute, the fall states and the landing (no hard
+  landing, no damage from it). It ends when the air timer passes 20 ticks (state 700, falling), when
+  the arena changes (`0x573be8` = −15 counts up to 0), or when Kurt comes to a stop on the floor:
+  then he gets up like from a knock-down, starting at the `K_BFLIP` half (state 901).
+- Level 4's snow chase has a similar board mode (0x46ac4c, `K_SURF`/`K_SURFJ` in `LEVEL4S.SNI`,
+  sounds `SKILAND`/`SKITURN`, the board object `0x573c30`) ❓ not analysed yet.
+
 ## The minecrawler's timer (0x4240c4)
 
 Each level but the last gives Kurt 45, 30 or 20 minutes (by difficulty: 81000, 54000, 36000 ticks

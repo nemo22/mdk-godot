@@ -82,9 +82,9 @@ conditions such as `if_anim_done` test their state. See [engine.md](engine.md#ob
 - [`MDKScriptVM`](../game/scripts/script_vm.gd) runs a frame of an object's script like
   `script_run`. Opcodes that aren't implemented yet are still decoded (so scripts never lose sync)
   and their conditions are false; `--profile` lists the ones that were hit. The levels use 236
-  opcodes; 32 aren't implemented yet, mostly effects (`attach_effect`, lights, debris), fans and
-  wind, chains and cutscene events. `tools/python/find_opcode.py` lists where the levels use an
-  opcode.
+  opcodes; 24 aren't implemented yet, mostly effects (`attach_effect`, lights, debris), swinging
+  objects and cutscene events. `tools/python/opcode_coverage.py` lists them and
+  `tools/python/find_opcode.py` shows where the levels use an opcode.
 - Each object's target is chosen when its script runs (`script_run`): Kurt, or the walking decoy
   (`0x573c20`), or the aliens' target set by `set_target_mode` 1 (`0x491e48`), unless the object has
   target mode 2 (always Kurt).
@@ -115,6 +115,16 @@ conditions such as `if_anim_done` test their state. See [engine.md](engine.md#ob
 - `hud_message` (247, 0x425400) queues a text of `MDKFONT.FTI` (e.g. `MU5_INI`, the bones' countdown
   `BONE1`–`BONE10` in level 4, the practice room's hints `DA2_*` in level 7), always with flag 1
   (growing and shrinking), see [gameplay.md](gameplay.md#hud-0x41e128).
+- `pick_waypoint8` (221, 0x460a6c) weighs every type-8 waypoint: `500 − distance` (2D), plus
+  `200 − distance to Kurt` when Kurt is within 200 of it, plus 250 when the object is closer to
+  Kurt than to the waypoint and the waypoint is farther from Kurt than from the object, less half
+  the height difference, at least 1. Mode 0 only takes waypoints 50–500 units away, mode 1 those
+  whose id is within 3 of the nearest one.
+- `path_speed_by_kurt` (164) compares how far the object is ahead of Kurt along its own heading
+  with the set distance (±5) and moves the path speed towards the far, middle or near speed by
+  `(near − far) × 0.5` per second.
+- `lob_to_kurt` (189) only throws when the target is at or below the object: it solves the fall
+  time and sets the horizontal speed to `friction × 0.5 × t + distance / t`, at most the maximum.
 - `boss_bar` (181) only acts while Kurt fires. Mode 0 shows `max − counter` of a triangle group
   (the destructible parts of the level 3 and 4 bosses), mode 1 `(high − v) / (high − low) × max` of
   an arena variable `v` (`arena+0x48`: `HMO_3`, `DANT_7`, level 8's `XEARTH`).
@@ -122,6 +132,9 @@ conditions such as `if_anim_done` test their state. See [engine.md](engine.md#ob
   (`if_alarm`).
 
 ## Data bugs in the original
+
+- `LEVEL3`'s `HMO_9` arena script starts with opcode 141, which has no handler: the script stops at
+  once (the original writes "Unknown opcode" to its debug log). The arena has no script in practice.
 
 - LEVEL3 `HMO_9`'s arena script starts with the invalid opcode 141, so it stops immediately.
 - 8 of the 11 uses of opcode 250 (`if_in_box`, in LEVEL7 `DANT_6`) have an empty Z range and can

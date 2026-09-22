@@ -22,7 +22,7 @@ var sky_offset := 0
 var sky_top_color := 0
 var sky_bottom_color := 0
 ## Arenas and corridors (`HMO_n`, `CHMO_n`), in file order. Each is a Dictionary with
-## `name`, `value` (the camera pitch in degrees, positive looks down) and `records` (Array of Dictionaries with `type`, `id`, `position`, `name`).
+## `name`, `value` (the camera pitch in degrees, positive looks down) and `records` (Array of Dictionaries with `type`, `id`, `angle`, `position`, `box_end`, `name`).
 var arenas: Array[Dictionary] = []
 
 
@@ -88,6 +88,9 @@ func _parse_records(offset: int) -> Array[Dictionary]:
 	for i in count:
 		var record := {type = r.u32(), id = r.s32(), angle = r.f32()}
 		record.position = r.vec3()
+		# Boxes (fan hotspots of type 7, wind zones of type 9) keep their far corner in the name.
+		record.box_end = r.vec3()
+		r.skip(-12)
 		record.name = r.name(12)
 		records.push_back(record)
 	return records

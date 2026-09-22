@@ -39,11 +39,36 @@ const FALL_START_SPEED := -16.0
 const CHUTE_GRAVITY := 21.33
 const CHUTE_FALL_SPEED := -8.0
 const CHUTE_BRAKE := 256.0
+## Out of an updraft Kurt rises at most this fast.
+const UPDRAFT_EXIT_SPEED := 40.0
+
+## Sliding (`damp_buttslide`, started by the wind zones): the slide velocity grows by the square of
+## the slope push (`10 × floor normal`) and of the wind, and brakes by 2 u/s² without either.
+const SLIDE_SLOPE := 10.0
+const SLIDE_FRICTION := 2.0
+## Speed cap: 50 by default, raised by 10/s up to 80 while accelerating, lowered by 25/s down to 15
+## while braking, and back towards 50 by 20/s without input.
+const SLIDE_CAP := 50.0
+const SLIDE_CAP_RANGE := Vector2(15.0, 80.0)
+const SLIDE_CAP_RISE := 10.0
+const SLIDE_CAP_FALL := 25.0
+const SLIDE_CAP_RELAX := 20.0
+## Kurt accelerates by 35 u/s² (above 15 u/s), brakes by 15 u/s² (down to 15 u/s) and turns by 45°/s.
+const SLIDE_ACCELERATION := 35.0
+const SLIDE_BRAKE := 15.0
+const SLIDE_MIN_SPEED := 15.0
+const SLIDE_TURN := 45.0
+## He falls twice as fast as usual, and the slide ends after 20 ticks in the air.
+const SLIDE_GRAVITY := 128.0
+const SLIDE_AIR_TICKS := 20.0
+## `BUTSLIDE` plays at 11025 Hz, or at 15000 Hz while accelerating.
+const SLIDE_PITCH := 15000.0 / 11025.0
 
 ## Seconds standing still before the idle animation plays.
 const IDLE_DELAY := 6.0
 
-enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD, THROW, KNOCKED }
+enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD, THROW, KNOCKED,
+		SLIP, SLIDE, SLIDE_FAST, SLIDE_BRAKE }
 
 ## Frame of `K_SPWEP` at which the item leaves Kurt's hand (`damp_animate`).
 const THROW_FRAME := 8
@@ -89,6 +114,10 @@ const STATE_ANIMATIONS := {
 	State.DEAD: ["K_BANG", false],
 	State.THROW: ["K_SPWEP", false],
 	State.KNOCKED: ["K_BANG", false],
+	State.SLIP: ["K_SLIP", false],
+	State.SLIDE: ["K_SLIDE", true],
+	State.SLIDE_FAST: ["K_FSLIDE", true],
+	State.SLIDE_BRAKE: ["K_BSLIDE", true],
 }
 
 ## Yaw in radians (0 faces -Z).
@@ -125,6 +154,17 @@ signal item_used
 signal bomb_triggered
 ## Whether an item may be used now (the runtime says no while a thrown item is active).
 var can_use_item: Callable
+## Fans (`updraft_query`, set by the scripts runtime): `(vertical speed, dt)` → Kurt's new
+## vertical speed, or NAN outside them.
+var updraft: Callable
+## Kurt slides on his back (`0x573be8`, state 807): the wind zones start it.
+var sliding := false
+## Slide velocity in MDK coordinates (`0x573bf0`), its speed cap and the smoothed floor normal.
+var slide_velocity := Vector2.ZERO
+var _slide_cap := SLIDE_CAP
+var _slide_normal := Vector3(0.0, 0.0, 1.0)
+var _slide_push := Vector2.ZERO
+var _slide_air := 0.0
 var sprites: MDKBni
 ## Returns a sound by name (see `Level.get_sound()`).
 var get_sound: Callable
@@ -139,6 +179,9 @@ var _jump_released := true
 var _footstep_pair := false
 var _sound_players: Array[AudioStreamPlayer] = []
 var _gun_player: AudioStreamPlayer
+## `FAN` loops while Kurt is in an updraft; `BUTSLIDE`/`BUTBRAKE` while he slides.
+var _fan_player: AudioStreamPlayer
+var _slide_player: AudioStreamPlayer
 var _gun_super := false
 var _muzzle_frame := 0
 var _ticks := 0
@@ -162,6 +205,10 @@ func setup(p_sprites: MDKBni, palette: MDKPalette, p_get_sound: Callable) -> voi
 		_sound_players.push_back(player)
 	_gun_player = AudioStreamPlayer.new()
 	add_child(_gun_player)
+	_fan_player = AudioStreamPlayer.new()
+	add_child(_fan_player)
+	_slide_player = AudioStreamPlayer.new()
+	add_child(_slide_player)
 	sprite.setup(palette)
 	muzzle.setup(palette)
 	muzzle.visible = false
@@ -217,6 +264,13 @@ func _physics_process(delta: float) -> void:
 	_update_knock_damage(delta)
 	var turbo := Input.is_action_pressed(&"turbo")
 	var on_floor := is_on_floor()
+	if sliding:
+		_update_slide(delta, on_floor)
+		_update_inside_bodies()
+		move_and_slide()
+		_update_slide_state(delta)
+		_update_muzzle()
+		return
 	_update_turning(delta, turbo)
 
 	var forward_input := Input.get_axis(&"move_back", &"move_forward")
@@ -276,8 +330,8 @@ func _update_knock_damage(delta: float) -> void:
 
 
 ## Knocks Kurt down (state 901): he stops firing, falls and gets up (`K_BANG`, `K_BFLIP`), and is
-## invulnerable for 3 seconds.
-func knock_down(p_push := Vector2.ZERO) -> void:
+## invulnerable for 3 seconds. After a slide he only gets up (`from_flip`).
+func knock_down(p_push := Vector2.ZERO, from_flip := false) -> void:
 	knock_damage = 0.0
 	invulnerable = KNOCKDOWN_INVULNERABILITY
 	push += p_push
@@ -286,6 +340,121 @@ func knock_down(p_push := Vector2.ZERO) -> void:
 	muzzle.visible = false
 	chute_open = false
 	_set_state(State.KNOCKED)
+	if from_flip:
+		animation_frame = sprites.get_animation("K_BANG").frame_count
+
+
+## Starts the slide (0x468b64): the wind zones (opcode 224) call this while Kurt is in their box.
+func start_slide() -> void:
+	if sliding or health == 0:
+		return
+	sliding = true
+	slide_velocity = Vector2.ZERO
+	_slide_cap = SLIDE_CAP
+	_slide_normal = Vector3(0.0, 0.0, 1.0)
+	_slide_push = Vector2.ZERO
+	_slide_air = 0.0
+	firing = false
+	_gun_player.stop()
+	muzzle.visible = false
+	chute_open = false
+	_set_state(State.SLIP)
+
+
+func stop_slide() -> void:
+	sliding = false
+	slide_velocity = Vector2.ZERO
+	_slide_player.stop()
+
+
+## Adds to the slide velocity (`slide_accel` 0x468be0): a push above 0.1 accelerates by its square,
+## below −0.1 it slows the same way, and in between the velocity brakes towards 0.
+func slide_accel(push_amount: Vector2, delta: float) -> void:
+	for axis in 2:
+		var a: float = push_amount[axis]
+		if a > 0.1:
+			slide_velocity[axis] += a * a * delta
+		elif a < -0.1:
+			slide_velocity[axis] -= a * a * delta
+		else:
+			slide_velocity[axis] = move_toward(slide_velocity[axis], 0.0, SLIDE_FRICTION * delta)
+
+
+## One frame of the slide (`damp_buttslide`).
+func _update_slide(delta: float, on_floor: bool) -> void:
+	if on_floor:
+		var normal := MDKScriptRuntime.to_mdk(get_floor_normal())
+		_slide_normal.x = 0.8 * _slide_normal.x + 0.2 * normal.x
+		_slide_normal.y = 0.8 * _slide_normal.y + 0.2 * normal.y
+		_slide_normal.z = 0.5 * _slide_normal.z + 0.5 * normal.z
+		_slide_push = Vector2(_slide_normal.x, _slide_normal.y) * SLIDE_SLOPE
+		_slide_air = 0.0
+	else:
+		_slide_air += TICKS * delta
+		if _slide_air > SLIDE_AIR_TICKS:
+			stop_slide()
+			_set_state(State.FALL)
+			return
+	slide_accel(_slide_push, delta)
+	# The slide goes where the velocity points, and Kurt faces it.
+	var mdk_yaw := rad_to_deg(yaw) + 90.0
+	if absf(slide_velocity.x) + absf(slide_velocity.y) > 0.5:
+		mdk_yaw = rad_to_deg(slide_velocity.angle())
+	mdk_yaw += Input.get_axis(&"turn_left", &"turn_right") * SLIDE_TURN * delta
+	yaw = deg_to_rad(mdk_yaw - 90.0)
+	var speed := minf(slide_velocity.length(), _slide_cap)
+	var forward_input := Input.get_axis(&"move_back", &"move_forward")
+	if forward_input > 0.0:
+		if speed >= SLIDE_MIN_SPEED:
+			speed += SLIDE_ACCELERATION * forward_input * delta
+		_slide_cap = minf(_slide_cap + SLIDE_CAP_RISE * delta, SLIDE_CAP_RANGE.y)
+	elif forward_input < 0.0:
+		if speed > SLIDE_MIN_SPEED:
+			speed = maxf(speed + SLIDE_BRAKE * forward_input * delta, SLIDE_MIN_SPEED)
+		_slide_cap = maxf(_slide_cap - SLIDE_CAP_FALL * delta, SLIDE_CAP_RANGE.x)
+	else:
+		_slide_cap = move_toward(_slide_cap, SLIDE_CAP, SLIDE_CAP_RELAX * delta)
+	speed = minf(speed, _slide_cap)
+	slide_velocity = Vector2.from_angle(deg_to_rad(mdk_yaw)) * speed
+	velocity.x = slide_velocity.x
+	velocity.z = -slide_velocity.y
+	velocity.y -= SLIDE_GRAVITY * delta
+	if on_floor and is_zero_approx(speed) and _slide_push.is_zero_approx():
+		# At rest he gets back up.
+		stop_slide()
+		knock_down(Vector2.ZERO, true)
+
+
+## The slide animations: `K_SLIP` once, then `K_SLIDE`, `K_FSLIDE` or `K_BSLIDE`.
+func _update_slide_state(delta: float) -> void:
+	if not sliding:
+		_update_state(delta, 0.0, 0.0)
+		return
+	state_time += delta
+	var animation := sprites.get_animation(STATE_ANIMATIONS[state][0])
+	animation_frame += TICKS * delta
+	if state != State.SLIP or animation_frame >= animation.frame_count:
+		var forward_input := Input.get_axis(&"move_back", &"move_forward")
+		var wanted := State.SLIDE
+		if forward_input > 0.0:
+			wanted = State.SLIDE_FAST
+		elif forward_input < 0.0:
+			wanted = State.SLIDE_BRAKE
+		if wanted != state:
+			_set_state(wanted)
+			animation = sprites.get_animation(STATE_ANIMATIONS[state][0])
+	_update_slide_sound()
+	sprite.show_frame(animation, int(animation_frame) % maxi(animation.frame_count, 1))
+
+
+func _update_slide_sound() -> void:
+	var sound_name := "BUTBRAKE" if state == State.SLIDE_BRAKE else "BUTSLIDE"
+	var pitch := SLIDE_PITCH if state == State.SLIDE_FAST else 1.0
+	if _slide_player.get_meta(&"sound", "") != sound_name:
+		_slide_player.set_meta(&"sound", sound_name)
+		_slide_player.stream = _looped(get_sound.call(sound_name))
+		_slide_player.play()
+	_slide_player.pitch_scale = pitch
 
 
 ## Dead Kurt lies still while the skull fades in (`damp_control`), then the level restarts (the
@@ -342,13 +511,8 @@ func _update_firing() -> void:
 	_gun_super = super_gun
 	if firing:
 		# `GATTFIRE` loops while firing (`MULTIFIRE` with the super chain gun, 0x46c3e4).
-		var stream: AudioStreamWAV = get_sound.call("MULTIFIRE" if super_gun else "GATTFIRE")
+		var stream := _looped(get_sound.call("MULTIFIRE" if super_gun else "GATTFIRE"))
 		if stream:
-			if stream.loop_mode == AudioStreamWAV.LOOP_DISABLED:
-				stream = stream.duplicate()
-				stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-				var frame_bytes := (2 if stream.stereo else 1) * (2 if stream.format == AudioStreamWAV.FORMAT_16_BITS else 1)
-				stream.loop_end = stream.data.size() / frame_bytes
 			_gun_player.stream = stream
 			_gun_player.play()
 	else:
@@ -410,6 +574,7 @@ func _update_vertical(delta: float, on_floor: bool) -> void:
 			velocity.y = JUMP_VELOCITY
 			_jump_ticks_left = JUMP_HOLD_TICKS
 			_jump_released = false
+		_update_updraft(delta)
 		return
 
 	if _jump_ticks_left > 0:
@@ -423,6 +588,25 @@ func _update_vertical(delta: float, on_floor: bool) -> void:
 			velocity.y = minf(velocity.y + CHUTE_BRAKE * delta, CHUTE_FALL_SPEED)
 	else:
 		velocity.y = maxf(velocity.y - GRAVITY * delta, -MAX_FALL_SPEED)
+	_update_updraft(delta)
+
+
+## In a fan's box the fan sets Kurt's vertical speed and opens his chute (state 701), with the
+## `FAN` sound looping; out of them he can't rise faster than 40 u/s (`damp_gravity`).
+func _update_updraft(delta: float) -> void:
+	var vz: float = updraft.call(velocity.y, delta) if updraft.is_valid() and health > 0 else NAN
+	if is_nan(vz):
+		_fan_player.stop()
+		if state != State.KNOCKED and velocity.y > UPDRAFT_EXIT_SPEED:
+			velocity.y = UPDRAFT_EXIT_SPEED
+		return
+	velocity.y = vz
+	if not chute_open:
+		chute_open = true
+		play_sound("CHUTEOUT")
+	if not _fan_player.playing:
+		_fan_player.stream = _looped(get_sound.call("FAN"))
+		_fan_player.play()
 
 
 func _update_state(delta: float, forward_input: float, strafe_input: float) -> void:
@@ -515,6 +699,16 @@ func _update_state(delta: float, forward_input: float, strafe_input: float) -> v
 	if not STATE_ANIMATIONS[state][1]:
 		frame = mini(frame, animation.frame_count - 1)
 	sprite.show_frame(animation, frame)
+
+
+## A looping copy of a sound.
+static func _looped(stream: AudioStreamWAV) -> AudioStreamWAV:
+	if stream and stream.loop_mode == AudioStreamWAV.LOOP_DISABLED:
+		stream = stream.duplicate()
+		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		var frame_bytes := (2 if stream.stereo else 1) * (2 if stream.format == AudioStreamWAV.FORMAT_16_BITS else 1)
+		stream.loop_end = stream.data.size() / frame_bytes
+	return stream
 
 
 ## Plays a sound (by name, from the level's sounds) without position.

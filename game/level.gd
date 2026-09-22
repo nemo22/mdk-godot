@@ -212,6 +212,18 @@ func get_start_yaw() -> float:
 	return deg_to_rad(dti.start_angle - 90.0)
 
 
+## Returns a sprite animation of the level's archives (`LEVELnS.SNI` holds Kurt's extra frames),
+## or `null`.
+func get_sprite_animation(entry_name: String) -> MDKSpriteAnimation:
+	for i in range(sound_archives.size() - 1, -1, -1):
+		var archive: MDKSni = sound_archives[i]
+		if archive:
+			var animation := archive.get_animation(entry_name)
+			if animation:
+				return animation
+	return null
+
+
 ## Returns the level's base palette (indices 0–63 are the same in every arena, used by sprites).
 func get_palette() -> MDKPalette:
 	return dti.palette

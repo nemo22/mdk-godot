@@ -10,7 +10,7 @@
   in the original ones).
 - Model and animation formats (models section and CMI models), model viewer.
 - Level viewer (`--viewer`) and model viewer (`--models`).
-- Scripts: bytecode decoder (every script of the game) and VM with 204 of the 236 opcodes the levels
+- Scripts: bytecode decoder (every script of the game) and VM with 212 of the 236 opcodes the levels
   use; arena scripts, DTI aliens, spawned objects, commands between objects, partners, group hit
   scripts.
 - Object movement like the original: spline paths, walking, flying, chasing, formations,
@@ -25,11 +25,13 @@
 - Kurt knocked down by hits and pushes, screen shake and white flash.
 - HUD messages in the original fonts (pickups, script hints), the health bar, the minecrawler's
   timer.
+- Fans (updrafts) with their particles, the wind zones and Kurt sliding on his back (level 6),
+  chains of objects and waypoints.
 
 ## Next
 
-1. **Aliens and scripts**: the last 32 opcodes (effects, lights, fans and wind, chains, cutscene
-   events), effects (sparks, particles, debris), path planning around walls (`plan_move`),
+1. **Aliens and scripts**: the last 24 opcodes (effects, lights, debris, swinging objects,
+   cutscene events), effects (sparks, particles, debris), path planning around walls (`plan_move`),
    automatic banking, the second arena seen through open doors.
 2. **Weapons and sniper mode**: sniper mode and its ammo (Bones' air strike), saving and loading.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.

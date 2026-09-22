@@ -232,6 +232,10 @@ truncated), so the port only keeps the `fmt ` and `data` chunks.
 same layout as an arena's world section. Empty corridors are two triangles with the material `NONE`.
 Corridors use the level texture archive (`C_FLR1`…).
 
+Kurt's extra sprite animations for a level are kept in its `LEVELnS.SNI` instead of
+`TRAVSPRT.BNI`, in the same format as a BNI animation (`u32 size`, then the animation):
+`K_SURF`/`K_SURFJ` in level 4, `K_SLIP`/`K_SLIDE`/`K_BSLIDE`/`K_FSLIDE` in level 6 ✅.
+
 ## CMI (scripts) 🟡
 
 `LEVELn.CMI`, internal name `LEVELn.CMD`. Bytecode scripts for aliens and objects

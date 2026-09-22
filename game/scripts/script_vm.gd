@@ -577,6 +577,31 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			var amount: int = inventory.super_chain_gun if o[0] == 0 else (inventory.ammo[o[0] - 1] if o[0] <= 5 else 0)
 			return _branch(obj, ins, _compare(amount, [o[1], o[2], o[3] if o[3] != null else 0.0]))
 
+		29:  # spawn_chain: links that hang off this object, nearest one first
+			var max_id := -1
+			for other in runtime.objects:
+				if other.leader == obj and not other.dead:
+					max_id = maxi(max_id, other.instance_id)
+			for n in range(o[0] - 1, -1, -1):
+				var link := runtime.spawn(obj, o[1], obj.mdk_position, 0.0, n + max_id + 1, o[2], false)
+				if not link:
+					break
+				link.move_command = 30
+				link.leader = obj
+
+		224:  # wind_zone: [enable] or [enable, yaw, speed]
+			var wind: Array = o[0]
+			runtime.wind_zone(obj.arena, wind[0] != 0, wind[1] if wind.size() > 2 else 0.0,
+					wind[2] if wind.size() > 2 else 0.0)
+
+		# Fans (updrafts).
+		142:  # fan_create: [hotspot, name, param, type, strength]
+			runtime.fans.create(obj.arena, o[0], o[1], o[2], o[3], o[4])
+		143:  # fan_remove
+			runtime.fans.remove(obj.arena, o[0])
+		190:  # fan_enable: [enable, name]
+			runtime.fans.enable(obj.arena, o[1], o[0] != 0)
+
 		# The HUD.
 		247:  # hud_message: [flags, text name, seconds]
 			if runtime.messages:
@@ -634,9 +659,49 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			var depth: float = o[2] if o[2] != 0.0 else 10.0
 			var point := obj.mdk_position + Vector3(offset.x, offset.y, 1.0)
 			return _branch(obj, ins, runtime.raycast(point, point - Vector3(0, 0, depth + 1.0)).is_empty())
+		189:  # lob_to_kurt: throw itself so that it lands on Kurt (or at a height)
+			var args: Array = o[0]
+			if args[0] <= 1:
+				var target_z: float = args[2] if args[0] == 0 else runtime.kurt_position.z
+				var fall := target_z - obj.mdk_position.z
+				# The fall time of `0.5 × gravity × t² = fall` with the current vertical speed.
+				var a := obj.gravity * -0.5
+				var discriminant := obj.velocity.z * obj.velocity.z + 4.0 * a * fall
+				if fall <= 0.0 and discriminant >= 0.0:
+					var root := sqrt(discriminant)
+					var time := maxf((root - obj.velocity.z) / (a * 2.0), (-obj.velocity.z - root) / (a * 2.0))
+					var to_kurt := Vector2(runtime.kurt_position.x - obj.mdk_position.x,
+							runtime.kurt_position.y - obj.mdk_position.y)
+					var distance := to_kurt.length()
+					if time > 0.0 and distance > 0.0:
+						# The friction over the flight has to be made up for.
+						var speed := minf(obj.friction * 0.5 * time + distance / time, args[1])
+						var velocity := to_kurt * (speed / distance)
+						obj.velocity.x = velocity.x
+						obj.velocity.y = velocity.y
 		46:  # find_cover_spot
 			runtime.find_cover_spot(obj)
 			return _branch(obj, ins, obj.move_command == 43)
+		197:  # find_advance_spot
+			runtime.find_advance_spot(obj)
+			return _branch(obj, ins, obj.move_command == 197)
+		221:  # pick_waypoint8
+			runtime.pick_waypoint8(obj, o[0])
+			return _branch(obj, ins, obj.move_command == 221)
+		209:  # if_player_on_me_low: Kurt stands on it, fires, and isn't above its top
+			var on_me := runtime.get_kurt_platform() == obj and runtime.kurt.firing
+			return _branch(obj, ins, on_me and runtime.kurt_position.z <= runtime.get_world_bounds(obj).end.z)
+		164:  # path_speed_by_kurt: [enable, [distance, far, middle, near speeds]]
+			if o[0] != 0:
+				obj.path_speeds = o[1]
+				obj.path_speed = o[1][2]
+				obj.flags |= MDKObject.FLAG_PATH_SPEED_BY_KURT
+			else:
+				obj.flags &= ~MDKObject.FLAG_PATH_SPEED_BY_KURT
+		173:  # teleport_player_keep: to another arena keeping the place, or by an offset
+			if o[0].is_empty():
+				var offset := Vector3(o[2], o[3], o[4])
+				runtime.teleport_kurt("", runtime.kurt_position + offset, runtime.kurt_yaw + o[5])
 		103:  # if_kurt_in_box
 			var box := AABB(Vector3(o[0], o[1], o[2]), Vector3(o[3] - o[0], o[4] - o[1], o[5] - o[2]))
 			return _branch(obj, ins, box.has_point(runtime.kurt_position))

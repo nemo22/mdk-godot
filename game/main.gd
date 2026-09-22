@@ -38,6 +38,11 @@ func _ready() -> void:
 	print("Level %d loaded in %d ms" % [level.number, Time.get_ticks_msec() - start])
 
 	var sprites := MDKBni.load_file(MDKData.path("TRAVERSE/TRAVSPRT.BNI"))
+	# Kurt's sliding and surfing frames are in the level's own archive.
+	for animation_name in ["K_SLIP", "K_SLIDE", "K_FSLIDE", "K_BSLIDE", "K_SURF", "K_SURFJ"]:
+		var animation := level.get_sprite_animation(animation_name)
+		if animation:
+			sprites.add_animation(animation_name, animation)
 	kurt.setup(sprites, level.get_palette(), level.get_sound)
 	hud.setup(kurt, sprites, level.get_palette(), MDKFti.load_file(MDKData.path("MISC/MDKFONT.FTI")))
 	kurt.died.connect(_on_kurt_died)
