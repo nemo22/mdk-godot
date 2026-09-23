@@ -62,8 +62,21 @@ Speeds per tick (× 30 for per second):
 - Landing faster than 100 u/s is a hard landing (probably damage *(inferred)*).
 - The floor is found by the downward collision sweep (no separate height query). Moving platforms
   are found by a ray from z + 3 to z − 3 (`damp_platform_floor`).
-- Ledge grab (`damp_ledge_grab`): while falling and pushing forward, a segment at head height
-  (+4.604) is tested; the ledge must be flat (|nz| ≥ 0.85) and faced within 30°, with room above.
+- Ledge grab (`damp_ledge_grab` 0x469868, after `damp_gravity`) ✅: while falling (vertical speed
+  ≤ −0.25), moving forward, not already hanging and with a state priority below 9, the path of the
+  point 4.604 above the feet and 1, 2 then 3 units ahead (last frame's position → this frame's) is
+  tested against Kurt's arena, then the neighbour one. The first triangle hit must be flat
+  (|nz| ≥ 0.85); its edge crossed by the line from the hit point back towards Kurt is the ledge.
+  Kurt must face it within 30° (his yaw becomes the edge's angle − 90°), and a box of half size
+  (0.5, 0.5, 2) swept from 1 unit before the edge to half a unit past it, 2.5 above it, must be
+  free. Kurt is then put 1 unit before the edge and 4.604 below it, his speeds cleared, state 800.
+- Climbing (state 800, `damp_animate`): `K_HANG` at 2 ticks per frame, with gravity off
+  (`0x573a40` = 2); for tick `t` (from 1) and `k = (t + 1) >> 1` below 15, the height grows by
+  `(H[k] − H[k−1]) × 0.708333 × 0.5` and the position moves back by `(B[k] − B[k−1])` × the same
+  along the facing, with the tables `H` (`0x491f34`: 0.374 … 6.417) and `B` (`0x491f74`: 0.685 …
+  −1.305): about 4.27 up and 0.7 forward in all. After `2 × frames − 1` ticks he's free again. The
+  port looks for the edge by stepping back from the hit point with short downward rays and gets the
+  wall's direction from a ray under the edge.
 
 ### Kurt's run animation (`damp_run_anim_frame`)
 
@@ -282,36 +295,378 @@ floor normal `0x573bfc`… = (0, 0, 1), state 807. The chain gun stops.
   0–7 of the highest are hidden (flags 0x30) and fly off (0x40b280): `vz += 0.025` per tick, a spin
   growing by 0.15° per tick² up to 2.5° per tick around Kurt; a piece goes when its centre passes
   the limit (500 above, rising with Kurt). The screen shakes (5). Kurt takes off (state 1000
-  `K_TAKEOF`, then 1001 `K_FLOATC`) and rises with the debris (0x40b558 instead of `damp_control`);
-  once he rises faster than 3 units per tick the rise doubles, the view tilts up and the white flash
-  climbs by 8 per tick; past 300 the stream starts. The city outcome flags are kept
+  `K_TAKEOF`, then 1001 `K_FLOATC`) and rises with the debris (0x40b558 instead of `damp_control`):
+  he turns clockwise ever faster (`0x573b0c` += 0.15° per tick up to 2.5° per tick), his rise
+  speed `0x573b14` grows by 0.025 per tick (three times as fast once above 3 units per tick). Above
+  3, the camera pitch offset `0x573b1c` (added to the arena's pitch) drops by 22.5°/s to
+  `(−60 − the arena's pitch) × 0.5` (the view tilts up); once there a sound plays and the white
+  flash climbs by 8 per tick; past 300 the stream starts. The city outcome flags are kept
   (`0x57440f` = `0x573b5c`).
-- **The fall** (`fall_3d.c`, 0x410018–0x41357c): a minigame in its own files (`FALL3D/FALL3D_n.MTI`
-  with the ground `LEVELn` 1024², the minecrawler's track `PODn` and sprites `Ln_C0001–8`;
-  `FALL3D.BNI` with the models `KURT`, `MISSILE`, `CHUTE`, `BONES`, pickups, the palettes `SPACEPAL`
-  and `FALLP1–5`, images `SPACE`, `MOON`, `EARTH`, `PICK`, `SKULL`; `FALL3D.SNI`).
-  - A 5 s intro in space (Kurt eases in, fade to white), then Kurt falls at 66.67 units/s from z
-    5270 for 30 s, seen from above (camera at 0.85 × his x/y, 10 above). He steers in x (±58.8)
-    and y (±35.3) at up to 117.6 units/s (11.76 per tick). At 30 s `K_FINISH`, he's pulled to the
-    centre, the camera slows (2 s), fades to black; the level loads after 33 s.
-  - Radars sweep a beam spot towards Kurt, pickups or random points; within 15 units (`K_SEEN`)
-    they launch missiles that home on Kurt (4–11 damage, twice on hard). Pickups
-    (`FALLPU_n`: `SW_HOME`, `SW_GATT`, `SW_HBOMB`, `SW_SGREN`) fall with chutes and are taken by
-    touching them. The ground is a textured plane where the minecrawler leaves its track. The
-    difficulty and the index set the radar speed, missile counts and intervals.
+- **The fall** (state 2, `fall_3d.c`): a minigame in its own files, played after each briefing;
+  see [The fall](#the-fall-state-2-fall_3dc) below.
 - **The stream** (state 5, `STREAM/STREAM.BNI`, `STREAM.MTI`): Kurt steers down a generated tunnel
   (0x434838, not decoded yet), hitting the walls hurts; Bones rescues him (`RESCUE`) after segment
   177 or at 1 health (the Gunta variant ends at 186).
 - **Statistics** (state 6, `MISC/STATS.BNI`, `STATS.MTI`): `L1_INTRM` until a key; the debriefing
-  typed at 15 characters per second on `L<n>_MAP` (`DEBTOP`, `DEBnS`/`F`/`SS`/`SF`/`FS` by the
-  city flags, `DEBBOT`); the Score-O-matic (`ST_SCR`, `ST_DAMP` "NAME: Kurt Hectic"): shots fired
-  (`0x573c3c`) and accuracy (`0x573c40`, ticks on target), sniper rounds (`0x573c44`) and accuracy
-  (`0x573c48`), kills (`0x573c54`/`0x573c50`), head shots (`0x573c4c`, opcode 217, as spinning
-  `XGHEAD` models); then the briefing `BRIEFn` on the next map (health raised to 100, the inventory
-  emptied).
-- **In the port**: the order of play, the loading screen (`LoadingScreen`) and the end of level
-  (`MDKEndLevel`, then straight to the next level; the view doesn't tilt up yet). The fall, the
-  stream and the statistics aren't done.
+  typed at 15 characters per second on `L<n>_MAP`; the Score-O-matic; then the briefing `BRIEFn`
+  on the next map (health raised to 100, the inventory emptied). See
+  [below](#statistics-and-briefing-state-6).
+- **In the port**: the order of play, the loading screen (`LoadingScreen`), the end of level
+  (`MDKEndLevel`), the statistics, debriefing and briefing (`StatsScreen`: after a level below
+  index 4, and the briefing alone for a new game), then the next level. The fall, the stream and the
+  save prompt after the Score-O-matic aren't done. The Score-O-matic's counts
+  (`GameState.stats`) are cleared when a level starts.
+
+### Statistics and briefing (state 6)
+
+✅ = read in the code (`MDKD3D.EXE`) or the data, ❓ = unverified. A preview renderer of every page
+is [`tools/python/mdk_stats.py`](../tools/python/mdk_stats.py).
+
+**Screen.** Everything is drawn on the 600 × 360 screen (the images are blitted 1:1 at (0, 0) by
+0x46fa3c, the texts are centred on x 300) ✅. Colours: 0–63 are the global palette `0x5735e4`
+(the system colours, identical to `SYS_PAL` of `MDKFONT.FTI` after every level that reaches state
+6 ✅), 64–255 come from the page's image (the first 192 bytes of each image's palette are the
+same system colours, index 0 aside) ✅. Fonts: `FONTBIG` (0x415a20, baseline y) and `FONTSML`
+(0x415bd8); their widths count 6 / 4 pixels for a missing glyph ✅.
+
+**Entry** (`0x431b00(new_game)`) ✅: loads `STATS.MTI` (the head's textures) and `STATS.BNI`, the
+sounds `CGUN` (loaded with flag 1, probably looping ❓), `SNIPER`, `RICO1`–`3`, `ALDIE`,
+`XGHEAD1`/`2`, `TELETYPE`, parses the model `XGHEAD`, copies the global palette into the working
+palette `0x57f464` with colours 64–255 from `PAL`, and looks up the `ST_*` texts. Callers: after the
+stream while the index is below 4 (0x401cb8, `new_game` = 0, starts at the intermission); a new
+game (0x4240a0) and loading a kind-6 save (0x40a51c, 0x430930) pass 1 and start at the briefing.
+The menu has a debug key (`D`, `0x57ea60`, under a condition not checked ❓) that fills the counters
+with random numbers and enters with 0. No music is started ❓ (the BNI has none).
+
+**Phases** (`0x57f428`, run by 0x43200c; each phase initialises itself on its first frame,
+`0x57f424`) ✅:
+
+| # | Function | Shows | Palette 64–255 | Next |
+| --- | --- | --- | --- | --- |
+| 2 | 0x432818 | `L1_INTRM` (the same image after every level) | `L1_INTRM` | 4 |
+| 4 | 0x4322a0 | the debriefing on `L<i+1>_MAP` | `L<i+1>_MAP` | 1 |
+| 1 | 0x4328a4 | the Score-O-matic on a cleared screen (black ❓) | `PAL` | index + 1, save prompt (0x42b520(1)), 3 |
+| 3 | 0x4325b0 | the briefing `BRIEF<i+1>` on `L<i+1>_MAP` (after the increment: the next level) | `L<i+1>_MAP` | state ends (the fall) |
+
+(`i` = the level index `0x574268`, so `L1_MAP`–`L5_MAP` and `BRIEF1`–`5` follow the order of play.)
+
+**Fades and keys** ✅:
+
+- Each phase fades in over 0.5 s (`0x57f414 += 2 × dt`; `dt` = the frame time in seconds): the
+  working palette (all 256 colours) is blended `(colour·k + c·(256 − k)) >> 8` with
+  `k = round(fade × 256)` (0x416f80), `c` = white for the intermission, black for the others. At 1
+  the palette is set exactly. Nothing but the image (and the Score-O-matic's title and heads) is
+  drawn until the fade-in is complete.
+- Keys, read every frame: **Esc** (edge, `0x57ea50`) = skip (`0x57f78c`) and fast; **Fire or Jump
+  held** (`0x57eb48`, `0x57eb40`) = fast (`0x57f790`): every fade, typing and counting runs twice as
+  fast (typing 4×).
+- A phase ends (0x431f1c) only when it has finished showing everything and then any bound control
+  is held or pressed (`0x57eb30`…`0x57eba8`) or Esc is pressed; there's no timeout (the values 10/5
+  written to `0x57f434` are only a "waiting" marker ✅). It then fades out to black over 0.5 s
+  (`0x57f418`, `k = round((1 − fade) × 256)`) and the next phase starts. Holding Fire therefore
+  runs through the whole sequence. The text stays drawn during the fade-out.
+
+**Typing** (0x4335c0, used by the debriefing and the briefing) ✅: a character budget
+`n = round(count)`; `count` starts at 1 and grows by 15 per second (60 when fast); Esc sets it to
+2000 in the briefing. Every frame the text is laid out from the start and drawn with `FONTBIG`
+until the budget runs out; a cursor is appended to the last partial line: `_` while
+`(ticks & 31) ≤ 15`, a space otherwise (`ticks` accumulates `0x491e18`, 30 per second: it blinks
+every 16 ticks). A centred line being typed is placed by the width of the complete line, so it
+doesn't move. Each frame where `n` changed plays `TELETYPE` (restarted). Text codes (a decimal
+number `N`, possibly negative, may precede the letter):
+
+| Code | Effect |
+| --- | --- |
+| `\c`, `\Nc` | end the line; the next one is centred on x 300 (or N); y unchanged |
+| `\n`, `\Nn` | end the line; x 0, left-aligned; y += 36 (+ N) |
+| `\y`, `\Ny` | end the line; x 0, left-aligned; y += 36 (or y += N) |
+| `\x`, `\Nx` | end the line; left-aligned at x N (or 0); y unchanged |
+| `\Np` | pause: the budget loses N characters (only while counting) |
+| `\d`, `\i` | characters count against the budget (default) / appear instantly |
+
+Characters and spaces cost 1, codes cost nothing. The texts only use `\c`, `\n` and `\20n`.
+
+**Intermission** (phase 2) ✅: `L1_INTRM` (Kurt, Dr. Hawkins and Bones in the ship), fading in from
+white, until a key.
+
+**Debriefing** (phase 4) ✅: three texts typed one after the other at y (baseline of the first line)
+64, 120 and 300: `DEBTOP` ("Debriefing"), the result `DEB<i+1><r>`, `DEBBOT` ("More..."). The first
+starts with `count` = 1, the next ones with 0; finished texts are redrawn in full. Each Esc press
+finishes the current text and starts the next (the third press ends the page). `r` comes from the
+town flags kept at the end of the level (`0x57440f` = the global flags `0x573b5c`, bits 31 = a
+second town is threatened, 30 = the level's town was flattened, 29 = the second town was
+flattened):
+
+| bits 31–29 | 000 | 001 | 010 | 011 | 100 | 101 | 110 | 111 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| text | `S` | `S` | `F` | `S` | `SS` | `SF` | `FS` | `FF` |
+
+`DEB1`–`DEB4` exist with `S`, `F`, `FS`, `SS`, `SF`; there is no `FF` text (the lookup would fail ❓).
+`DEB1SF` has six lines, so its last one (y 300) overlaps "More..." ✅ (layout).
+
+**Score-O-matic** (phase 1) ✅. Always drawn: the spinning heads, `ST_SCR` "Score-O-matic" (`FONTBIG`
+centred, baseline 28) and `ST_DAMP` "NAME: Kurt Hectic" (`FONTSML` centred, baseline 48). Then six
+rows appear one at a time (`0x57f410` = the current row):
+
+| Row | Label | Value (`0x57f3e0[row]` counts up to) | Bar full at | Text | Start (x, y, w, s) | End |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | `ST_SHF` "Shots fired" | `0x573c3c` | the value | `%d` | 300, 85, 240, 256 | 180, 75, 120, 128 |
+| 1 | `ST_ACC` "Accuracy" | `0x573c40 × 100 / 0x573c3c` (0 if none) | 100 | `%d%%` | 300, 155, 240, 256 | 420, 75, 120, 128 |
+| 2 | `ST_SNF` "Sniper rounds fired" | `0x573c44` | the value | `%d` | 300, 155, 240, 256 | 180, 125, 120, 128 |
+| 3 | `ST_ACC` "Accuracy" | `0x573c48 × 100 / 0x573c44` | 100 | `%d%%` | 300, 225, 240, 256 | 420, 125, 120, 128 |
+| 4 | `ST_KILL` "Kills" | `0x573c54` | `0x573c50` | `%d/%d` (count/total) | 300, 225, 240, 256 | 300, 175, 120, 128 |
+| 5 | `ST_HEAD` "Head shots" | `0x573c4c` | — | heads | 300, 255, 240, 256 | same |
+
+(tables at 0x491b78 and 0x491bd8; integer percentages, truncated.)
+
+- **Drawing a row** (0x432de0) with its slide `t` (`0x57f3f8[row]`, 0…1): `x, y, w, s` are lerped
+  from start to end and rounded; the label is `FONTBIG` scaled by `s / 256` (nearest-neighbour,
+  0x415d8c), centred on `x` with baseline `y`. The bar is at `bx = x − w/2`, `by = round(y + 18·s/256)`,
+  16 pixels high, filled with colour 63 for `w × value / full` pixels (nothing else: no frame).
+  The value text is `FONTSML`, right-aligned 8 pixels left of the bar (`bx − width − 8`), baseline
+  `by + 14`.
+- **Sequence of a row** (rows 0–4): wait 0.5 s (`0x57f42c`, the row is hidden), play `SNIPER` and
+  show the row big (t = 0); wait 0.5 s (`0x57f430`); count: each frame the value grows by
+  `max(1, round(target × dt × 0.5))` (so about 2 s whatever the target; × 2 when fast, the whole
+  target on Esc) and plays `CGUN` (rows 0–3) or `ALDIE` (row 4) unless already playing; the
+  accuracy rows also play a random `RICO1`–`3` one frame in 8. When the value reaches the target
+  the slide starts (`t += 2 × dt`, 0.5 s; Esc snaps it to 1), `CGUN` is stopped and the next row
+  begins its 0.5 s wait. Rows keep sliding while the next ones appear.
+- **Head shots** (0x433268, row 5, skipped entirely when the option `0x5742dc` is 0): the label
+  stays at (300, 255) at full size. After the `SNIPER` wait and the 0.5 s wait, one head per second
+  (0.5 s when fast; all at once and silently on Esc; nothing if the count is 0): the counter goes up, `XGHEAD1` or `XGHEAD2` plays at random, and
+  while the counter is below `2 × perrow` a head appears. `perrow` = the count if below 5 (one row),
+  `(count + 1) / 2` up to 16, else 8 (16 heads at most). Head `k` of a row of `m` heads is placed at
+  `x = 20 (k + 1) / (m + 1) − 10`, `y = 8` (depth), `z = −3` (first row) or `−4.5` (second row),
+  scale 0.8, and spins about z at 157°/s (`obj+0x4c`). The view (0x432b74): camera at the origin
+  looking along +y, focal length 250 px (zoom 2.4), centre (300, 180), so on screen the heads are
+  at `300 + 31.25 x` and y ≈ 274 / 321 (❓ sign: below the label, as it must be). Once all are
+  counted, the page waits for a key.
+- `XGHEAD` is a simple textured box (8 vertices, 12 triangles; `XG_BOD` 256 × 283, `XG_BACK`
+  128 × 128 and colour 255 from `STATS.MTI`), drawn with the level renderer (0x46dba0,
+  `model_draw_parts`) and the `PAL` colours.
+
+**Briefing** (phase 3) ✅: on entry the inventory is emptied (`0x5743ef`, `0x57432c`…), health
+raised to 100 (`0x574324`), then `BRIEF<i+1>` is typed at y 32 on `L<i+1>_MAP` ("!!!Newsflash!!!",
+20 pixels of extra space, then four or five centred lines 36 apart). Esc shows all of it and ends
+the page at once. After the fade-out state 6 returns and the fall starts.
+
+**Sounds** ✅: `SNIPER` (a Score-O-matic row appears), `CGUN` (counting, rows 0–3), `RICO1`–`3`
+(accuracy rows, random), `ALDIE` (counting kills), `XGHEAD1`/`XGHEAD2` (each head shot),
+`TELETYPE` (each typed character); all from `STATS.BNI`.
+
+## The fall (state 2, `fall_3d.c`)
+
+Kurt falls from orbit onto the minecrawler before each level (not before LEVEL5, which loads
+directly). Init 0x410018, each frame 0x4114a4 (intro 0x41106c), cleanup 0x410b80. `n` below is the
+level index + 1 (1–5). Times are in seconds (`t`, `0x5209c4`, counted from the end of the intro) or
+ticks (1/30 s); `dt` is the frame time in seconds (`0x491e24`). World units "u", Z up. The files are
+described in [formats.md](formats.md#fall-files-fall3d); `tools/python/fall3d_dump.py` lists and
+exports them.
+
+### Loading (0x410018) ✅
+
+- `FALL3D/FALL3D_n.MTI` (textures, see formats.md), `FALL3D/FALL3D.BNI` (models, palettes,
+  images), `FALL3D/FALL3D.SNI` (sounds). The level's `TRAVSPRT.BNI` isn't loaded: the fall BNI has
+  its own copies of the HUD images (`SC_STAT`, `SC_BSTAT`, `SNIP_TXT`, `PICKUPS`).
+- Models (table 0x490ca4/0x490cbc, slot = byte & 0x7F, bit 7 = the model has named parts):
+  `KURT` 1, `MISSILE` 3, `CHUTE` 4, `BONES` 5, `SW_BONES`…`SW_KEY` 6–23 (the pickups), `EXPLODE` 24.
+  Slot 2 is `RADAR`, a model built in code (0x412f94, see below). Model animations: `KURTANIM`,
+  `KURT_HIT`, `BONESANM`.
+- The palettes `FALLPn` (the fall) and `SPACEPAL` (the intro) get colour 0 forced to black. The
+  intro starts on `SPACEPAL`.
+- Difficulty (`0x57423e`: 0 easy, 1 normal, 2 hard) and level index `i` (0–4) set ✅:
+
+  | Variable | Easy | Normal | Hard | Meaning |
+  | --- | --- | --- | --- | --- |
+  | `0x5209d4` | 117.65 × (1 + 0.1 i) | 117.65 × (1 + 0.2 i) | 117.65 × (1 + i / 3) | radar beam speed (u/s) |
+  | `0x5209dc` | 2 + i / 5 | 2 + i / 3 | 2 + i / 2 | missiles per detection (integer division, + 0 or 1 at random) |
+  | `0x5209d8` | 7.5 − i | 6.5 − i | 5.5 − i | missile aim spread (u) |
+  | `0x5209e0` | 32 − i | 32 − 3 i | 32 − 5 i | ticks between missiles (+ 0–31) |
+  | `0x5209e4` | 63 − 3 i | 63 − 7 i | 63 − 9 i | ticks before the next radar (+ 0–63) |
+
+- In the first level's fall (index 0) the message `FALL_T1` ("Avoid the RADAR!") is queued
+  (0x425400, flag 1, 3 s).
+- Bones falls with Kurt when the index is above 3 (`0x5208b8`), i.e. only at index 4 (LEVEL8).
+- `WINDLOOP` starts at volume 0.
+
+### Intro in space (0x41106c, 150 ticks = 5 s) ✅
+
+A countdown `0x520a7c` from 150 ticks; `f = 1 − ticks left / 150` (0 → 1). Camera at (0, 0, 0)
+looking down (same projection as the fall). Each frame, in this order:
+
+1. `SPACE` (600 × 360) copied to the screen as the background.
+2. `MOON` (128²) centred at (300, 270 − 90 f), scaled (64 + 256 f) / 256 (32 → 160 px).
+3. `EARTH` (512²) centred at (300, 488 − 224 f), scaled (300 + 128 f) / 256 horizontally and
+   (100 + 42 f) / 256 vertically (600 × 200 → 856 × 284 px: a flattened disc rising from below).
+4. From 90 ticks left (after 2 s): Kurt (`KURT`, `KURTANIM` looping, angles +0x4c = 90°,
+   +0x13c = −90°) flies in: `e = 1 − (1 − min((90 − left) / 60, 1))²` (ease out), position
+   (30 e − 30, 10 e − 10, −10 e), i.e. from the camera's position (lower left on screen) to 10 u
+   below the camera in 2 s.
+
+Palette: fade in from black over the first 2 s (palette × `1 − (left − 90) / 60`, 0x410c28), plain
+`SPACEPAL` from 91 to 60 ticks left, then fade to white over the last 2 s (0x410cc0 with
+`1 − (60 − left) / 60`, see [Palette effects](#palette-effects-0x5209c8)). The wind (`0x5209b8`)
+rises from 0 to 0xC00 between 120 and 60 ticks left (`((120 − left) × 12 / 60) << 8`); its sound
+volume is `0x5209b8 × 0x5000 / 0xC00` every frame of the whole fall.
+
+At 0 ticks: blend tables rebuilt for `FALLPn` (0x410874), the first radar in 7–22 ticks, the first
+pickup in 31–62 ticks (if the level has any), Kurt placed at z = 5270 (x, y stay 0), Bones (if any)
+at (0, 0, 5290) with `BONESANM`.
+
+### Kurt (0x413158) ✅
+
+- Falls at a constant 66.67 u/s (z −= 66.67 dt); after 30 s he's at z ≈ 3270. `KURTANIM` loops;
+  when hit, `KURT_HIT` plays once, then `KURTANIM` again (it loops forever once he's dead).
+- Steering (until t = 30 s), per axis like Kurt's walk (`vel_accel_dt`, 0x409270): a key sets the
+  acceleration to 11.765 u/s per tick (352.9 u/s²) up to 117.65 u/s, pressing the opposite
+  direction first resets the speed to one step; without a key the speed drops by 11.765 u/s per
+  tick to 0. `0x57eb30`/`0x57eb34` give −x/+x, `0x57eb38`/`0x57eb3c` +y/−y (which physical keys
+  these are ❓: left, right, up, down); analog axes `0x57ea18` (x) and −`0x57ea1c` (y) scale both
+  values.
+- Limits: |x| ≤ 58.82 (1000/17), |y| ≤ 35.29 (600/17); hitting a limit zeroes that speed.
+- After 30 s: `K_FINISH` plays once, and each frame `v = (v − 2 p) × 0.5` per axis: he's pulled
+  back to the centre.
+- Collision box: x ± 4, y ± 4, z ± 5 around him (+0x198…+0x1ac); missiles and pickups test the
+  segment of their last move against it (0x45ef80).
+
+### Camera and projection ✅
+
+- Position (0x413440): (0.85 x, 0.85 y, z + 10) of Kurt until t = 30 s; then x, y still follow and z
+  moves by `vz × dt` with `vz` from −66.67 u/s rising by 33.33 u/s² to 0: the camera stops in 2 s,
+  66.7 u lower, while Kurt keeps falling away from it. The wind level (`0x5209b8`) follows
+  `−vz × 0.015 × 3072` (0xC00 → 0).
+- It looks straight down; world +x is right and +y is up on screen:
+  `sx = 300 + 250 (x − cx) / (cz − z)`, `sy = 180 − 250 (y − cy) / (cz − z)` (focal 250 px on the
+  600 × 360 view; horizontal FOV 100.4°, vertical 71.5°). Kurt, 10 u below, is drawn at
+  (300 + 3.75 x, 180 − 3.75 y): at most ±220 × ±132 px from the centre.
+- Models are sorted by depth (a key per object, ascending z, 0x411aa4) and drawn in that order:
+  the model at its z, the chute at z + 2, the missile's smoke trail (0x439454) at 0, an explosion at
+  camera z + 5 (always on top); an entry at z + 10 for missiles (+0x108, 0–8) has no drawing code,
+  and a `PICK` sprite for objects with +0x10c set is never used ❓.
+
+### Ground (0x41357c) ✅
+
+Not 3D: the texture `LEVELn` (1024², `FALLPn` palette) is mapped affinely onto the whole 600 × 360
+view, before the models. With `S = cz / 5280` texels per pixel:
+
+- `u = 512 + 0.36 cx + S (sx − 300)`, `v = A − 0.36 cy + S (sy − 180)`,
+  `A = 824 − 624 t / 33` (a pixel at the view centre is the texel (512 + 0.36 cx, A − 0.36 cy)).
+- So the ground zooms in as the camera drops (S from ≈ 1 to 0.62 at 30 s), slides 0.36 texels
+  per unit of camera movement (parallax, faster than a plane at z = 0 would), and scrolls down the
+  screen at 18.9 texels/s. The texture isn't wrapped.
+- **The minecrawler** sits at texel (512, A): its sprite `Ln_C0001`–`Ln_C0008` (64 × 108, 8 frames
+  at 15 fps: `0x520920 += ticks × 0.5`, modulo 8, palette index 0 transparent) is drawn centred at
+  `(300 − 0.36 cx / S, 180 + 0.36 cy / S)` scaled by `0.75 / S` (sprite scale `192 / S`, 256 = 1:1).
+  Its sound `C_GRIND` loops at volume `(min(t / 30, 1) + 2) / 3` (2/3 → full).
+- **Its track** is written into `LEVELn` itself each frame (0x41357c): with
+  `R = round(A − h × 80 / 256)` (h = 108, so ≈ A − 34, near the front of the sprite) and `n` = the
+  previous `R` (initially 1024) − R, at least 24, rows R … R + n − 1 of `PODn` (64 × 1024) replace
+  the ground's columns `512 − w … 512 + w − 1` of the same rows, `w = round(16 + 2 j / 3)` for the
+  j-th row (j < 24), 32 after: a groove 32 texels wide under the crawler widening to 64 behind it.
+  The first frame writes the track from ≈ row 790 to the bottom.
+- **Haze** (`ZOOMnnnn`, 16 frames, the next one each frame): each record covers two screen rows
+  and gives a byte `b` (1–8) per pixel of the left and right parts of the row (in groups of 4
+  pixels; the middle part is plain); those pixels use blend table `k + b` instead of the palette, `k = 0x5209b8 >> 8` (the wind level, 12
+  during the fall). Table `j` (1–24) blends toward white by `a[j − 1] / 256`,
+  `a` = 0 ×8, 3, 6, 12, 18, 24, 48, 72, 96, 120, 144, 168, 192, 215, 230, 245, 255 (0x490d1c); at
+  k = 12 that's 24/256 (b = 1) to 192/256 (b = 8): white radial speed streaks around a clear centre,
+  fading out with the wind at the start and the end (k = 0 would pick the 50 % green table, an
+  unintended edge case).
+
+### Radars (0x4130ac create, 0x412af8 update) ✅
+
+One at a time. The first appears 7–22 ticks after the intro, the next `0x5209e4` + 0–63 ticks after
+one disappears (`R_START` plays).
+
+- **Model** `RADAR` (0x412f94): 25 vertices recomputed every frame, 46 triangles (0x40fec0,
+  `u8 v0, v1, v2, colour`): a fan of 6 from vertex 0 to ring 1 (colour 0), rings 1–2, 2–3, 3–4 (12
+  each, colours 1–3) and a cap on ring 4 (4 triangles, colour 4). Colour c is material
+  −(0x405 + c) (special materials 1029–1033), presumably the translucent green tables built at
+  `0x5738e4` (palette blended toward (0, 255, 0) by 48, 64, 80, 96, 128 / 256) ❓.
+- Placed at (−4 cx, −4 cy, 0). Ring k (1–4) is a hexagon (0°, 60°, … from (0.5, 0.866)) centred at
+  the fraction `1 − 2^−k` of the way from the base to the beam spot, radius `r × (1 − 2^−k)`: a
+  horn-shaped beam ending in a disc of radius r around the spot.
+- **Extending**: the spot rises at 3000 u/s towards the target height `z_t` = Kurt z − 3, its xy
+  following the line from (0, 0) to the target, r = 10 × z / z_t. When it arrives it takes a new
+  random target (x ± 58.82, y ± 35.29).
+- **Tracking** (spot at `z_t`): velocity `v = 0.75 v + 0.25 × speed × unit(target − spot)` in xy
+  (speed = `0x5209d4`), r = 10; after 30 ticks or when within 2.94 u (on each axis) of the target
+  (`R_MOVE`), it picks a new target (0x412a38): one of Kurt, the falling pickups, and random points
+  (± 58.82, ± 35.29) to make 12 choices at most (up to 3 random ones), chosen uniformly.
+- **Detection**: Kurt's xy within 15 u of the spot (`K_SEEN`): the radar retracts (the spot drops
+  at 1500 u/s and the radar goes when it reaches 0), `0x5209dc` + 0/1 missiles are added to the
+  launch queue with the first one next tick, and the screen flashes (target 0.75 or lower by 0.5,
+  at 3/s).
+
+### Missiles (0x412568 launch, 0x411ee8 update) ✅
+
+- Launched from the queue every `0x5209e0` + 0–31 ticks (`M_LNCH`), each one also whitening the
+  screen by 0.2 (to 0.5 at most).
+- Start at (0, 0, 0) with velocity (250 sin a, 250 cos a, 250), `a` random, a random aim offset
+  (±spread, ±spread, 0) with spread `0x5209d8`, and a smoke trail (0x439088).
+- Each frame: move; while below 0.75 × Kurt's z, z moves 3 × more (4 × its vertical speed); the
+  `MISSILE` model is oriented along its velocity (0x4123e8).
+- For 60 ticks it just flies; then it homes: with `dz` = Kurt z − its z, it aims at Kurt +
+  (offset x, offset y, −min(dz / 225, 10) × 66.67) and steers `v = 0.8 v + 0.2 × 250 × unit`. Once
+  it's more than 5 u above Kurt it has passed (`M_PASS`) and is removed 60 ticks later.
+- **Hit** (segment vs Kurt's box, until t = 30 s): `EXPLODE1`/`EXPLODE2` and one of `K_HIT1`–`K_HIT7`;
+  damage 4 (easy), 4 + rand(8) (normal), twice 4 + rand(8) (hard), health clamped at 0. The missile
+  becomes an explosion: model `EXPLODE` with the animated `EXPLODE` texture (26 frames), following
+  Kurt's z, frame = ticks since the hit, scale = 2 × frame / 26, a random yaw, removed after 26 ticks.
+
+### Pickups (0x4128fc spawn, 0x41275c update) ✅
+
+- `FALLPU_n` lists names of `CMI`-style pickups (`SW_HOME`, `SW_GATT`, `SW_HBOMB`, `SW_SGREN`);
+  they're dropped from the last one to the first, the first 31–62 ticks after the intro, then every
+  31–158 ticks. Level 1: `SW_HOME`, `SW_GATT`, `SW_HOME`; levels 2–5: `SW_HOME`, `SW_SGREN`,
+  `SW_HBOMB`, `SW_GATT` (in drop order).
+- Spawn (`P_FALL`): its model, at (±55.88, ±33.53, Kurt z + 15) (0.95 × Kurt's range, uniform),
+  falling at 133.3 u/s (twice Kurt's speed), for 30–93 ticks.
+- Then its chute opens (`CHUTE` model at z + 2, `P_CHUTE`): it brakes by 66.67 u/s² to 50 u/s and
+  spins at 30°/s. Kurt catches up with it.
+- Taken when its last move crosses Kurt's box (`P_COLL`, `K_COLL1`/`K_COLL2`), added to the
+  inventory as in the level (0x46d6b0: `SW_HOME` etc.); removed once it's above the camera.
+
+### Bones (0x4133b8, index 4 only) ✅
+
+Starts 20 u above Kurt at (0, 0) and falls at 74.07 u/s, overtaking him; `BONES` plays once when he
+passes below Kurt.
+
+### Palette effects (`0x5209c8`) ✅
+
+The fall palette `FALLPn` is shown through a "brightness" `b` (0x410cc0: each component
+`(c × k + (256 − k) × 255) >> 8`, `k = round(256 × clamp(b, 0, 1))`, colour 0 kept except in the
+first second): b < 1 is whiter.
+
+- First second: b = t (from white).
+- Normal: b moves towards a target (`0x5209d0`) at a rate (`0x5209cc`); once reached, a target
+  below 1 is replaced by 1 at 0.5/s, and at 1 there's a 1/32 chance per frame of a flicker to 0.9
+  at 0.5/s. Detection sets the rate to 3 and lowers the target by 0.5 (≥ 0.75), a launch by 0.2
+  (≥ 0.5). A hit sets b to 3 (no visible effect, delays the flicker).
+- t > 31 s: palette × (1 − (t − 31) / 2) (0x410c28), black at 33 s.
+
+### Death ✅
+
+Health at 0 (hit): b goes from 3 down by dt. While b ≥ 1, the red component of colours 1–254
+rises by 5 per tick (only every third byte from offset 3: the screen turns red) and `SKULL` (256²)
+is drawn centred at (300, 180) scaled by the smallest of those red values / 256 (256 = 1:1); below
+1 the palette fades to black (skull at full size); at 0 the fall ends and, the health being 0, the
+game returns to the menu (game over).
+
+### HUD and end ✅
+
+- Each frame after the scene: messages (0x425474), the health box (`SC_STAT`, 0x420830) and the
+  inventory (`PICKUPS`, 0x46cce4), as in the level.
+- At t > 33 s the fall ends (0x4114a4 returns 1): the fall files are freed (0x410b80) and the level
+  loads (0x41ba68) with the health (`0x574324`) and inventory (with the pickups) as they are; the
+  main loop also sets `0x574270`–`0x574278` to 1000 ❓.
+- Stereo mode (`0x574318`, 3D glasses ❓) draws everything twice with eye offsets (`0x491cc8`).
+- Sounds (`FALL3D.SNI`): `WINDLOOP`, `C_GRIND` (loops), `EXPLODE1`/`2`, `R_START`, `R_MOVE`,
+  `M_PASS`, `M_LNCH`, `P_CHUTE`, `P_COLL`, `P_FALL`, `BONES`, `K_HIT1`–`7`, `K_FINISH`,
+  `K_COLL1`/`2`, `K_SEEN`. No music.
+- Loaded but unused by the fall code ❓: `FLARE1`–`FLARE4`, `BANG` (a 26-frame RLE animation),
+  `PICK`.
 
 ## Saving and loading (`savegame.c`, `optload.c`)
 

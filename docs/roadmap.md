@@ -33,6 +33,9 @@
   aliens, level 6's shooting galleries, the camera tilting up at bosses.
 - The order of play (LEVEL7, 6, 3, 4, 8, 5), loading screens, the end of level (the arena torn
   apart around Kurt as he rises), dying back to the menu with "Continue", saved games.
+- The screens between levels: intermission, debriefing by the towns' fate, the Score-O-matic
+  (shots, accuracy, sniper rounds, kills, spinning head shots) and the briefing.
+- Kurt grabs ledges and climbs up them; the end of a level turns him and tilts the view up.
 - Aliens plan detours around walls (`plan_move`), replan when stuck, and bank into their turns.
 - Sniper mode: the scope screen, zoom, target lock, the clip and rounds (bullets, homing bullets,
   grenades, homing grenades, the mortar and its guidance by `bomb_follow_path`), Bones' air strike,
@@ -47,10 +50,10 @@
    second arena seen through open doors.
 2. **Sniper mode**: the 3D clip on the screen and the air strike's iris.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
-4. **Movement details**: ledge grab, slippery floors, conveyors, camera roll, pushing Kurt
+4. **Movement details**: slippery floors, camera roll, pushing Kurt
    away from walls instead of moving the camera closer, stopping on walls hit head-on.
-5. **Level flow**: the falling sequence (`FALL3D`), the stream between levels (`STREAM`), the
-   statistics and briefing screens, F2 snapshots and the save prompt after a level.
+5. **Level flow**: the falling sequence (`FALL3D`, documented), the stream between levels
+   (`STREAM`), F2 snapshots and the save prompt after a level.
 
 ## Menu
 

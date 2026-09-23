@@ -488,7 +488,8 @@ rate`.
   box fields `+0x20..+0x28` as a direction × strength × dt); a fan spawns a rising particle at a
   random point of its box (z0 + 0.25) one frame in 8 (0x4052d4, pool `arena+0x5c`).
 - `wind_zone` (224) uses the type-9 hotspots to slide Kurt, see
-  [gameplay.md](gameplay.md#sliding-damp_buttslide-0x468db8). Conveyors aren't in the port yet.
+  [gameplay.md](gameplay.md#sliding-damp_buttslide-0x468db8). No level creates a conveyor (opcodes
+  146–148 appear in no script), so the port has none.
 
 ## Chains (`spawn_chain` 29, movement command 30)
 

@@ -72,8 +72,13 @@ func _process(delta: float) -> void:
 	else:
 		air_time += delta
 		air_pitch = maxf(air_pitch, minf(air_time * AIR_PITCH_RATE, AIR_PITCH_MAX))
+	# At the end of the level Kurt floats up and the view tilts up (`MDKEndLevel`).
+	var end_tilt := 0.0
+	if scripts and scripts.end_level:
+		air_pitch = 0.0
+		end_tilt = scripts.end_level.pitch_offset
 	look_offset = clampf(look_offset, MIN_PITCH - arena_pitch - air_pitch, MAX_PITCH - arena_pitch - air_pitch)
-	var pitch := deg_to_rad(arena_pitch + look_offset + air_pitch)
+	var pitch := deg_to_rad(arena_pitch + look_offset + air_pitch + end_tilt)
 
 	var facing := target.get_facing()
 	var distance := DISTANCE

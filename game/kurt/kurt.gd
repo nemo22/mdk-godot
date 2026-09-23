@@ -98,7 +98,22 @@ const CLIP_SIZE := 3
 const CLIP_DECAY := 4.0
 
 enum State { STILL, IDLE, RUN, SIDE, TURN, JUMP, RUN_JUMP, FALL, CHUTE, LAND, SHOT, RUN_FIRE, DEAD, THROW, KNOCKED,
-		SLIP, SLIDE, SLIDE_FAST, SLIDE_BRAKE }
+		SLIP, SLIDE, SLIDE_FAST, SLIDE_BRAKE, HANG }
+
+# Ledge grab (`damp_ledge_grab` 0x469868, climbing in `damp_animate` state 800). See
+# docs/gameplay.md ("Ledge grab").
+## The ledge is looked for this high above the feet (`0x49798c`), 1 to 3 units ahead.
+const LEDGE_HEIGHT := 4.6041665
+const LEDGE_SPEED := -0.25
+const LEDGE_FLAT := 0.85
+const LEDGE_ANGLE := 30.0
+## Climbing (`K_HANG`, 2 ticks per frame): the height and the backward offset of each frame pair
+## (`0x491f34`, `0x491f74`), scaled by 0.708333 × 0.5 per tick.
+const CLIMB_HEIGHTS := [0.374, 0.326, 0.292, 0.311, 0.677, 1.263, 2.754, 4.172, 4.903, 5.343, 5.711,
+		6.001, 6.212, 6.345, 6.406, 6.417]
+const CLIMB_BACK := [0.685, 0.383, 0.167, 0.254, 0.635, 1.053, 0.847, 0.514, 0.17, -0.125, -0.501,
+		-0.825, -1.066, -1.221, -1.293, -1.305]
+const CLIMB_SCALE := 0.708333 * 0.5
 
 ## Frame of `K_SPWEP` at which the item leaves Kurt's hand (`damp_animate`).
 const THROW_FRAME := 8
@@ -148,6 +163,7 @@ const STATE_ANIMATIONS := {
 	State.SLIDE: ["K_SLIDE", true],
 	State.SLIDE_FAST: ["K_FSLIDE", true],
 	State.SLIDE_BRAKE: ["K_BSLIDE", true],
+	State.HANG: ["K_HANG", false],
 }
 
 ## Yaw in radians (0 faces -Z).
@@ -222,6 +238,8 @@ var sprites: MDKBni
 var get_sound: Callable
 
 var _mouse_turn := 0.0
+## Ticks since Kurt grabbed a ledge (`0x573a78`).
+var _climb_ticks := 0
 ## Object bodies Kurt is inside of (an object moved into him): he doesn't collide with them until
 ## he's out, like the original's box sweeps, instead of being pushed out (maybe through the floor).
 var _inside_bodies: Array[RID] = []
@@ -358,6 +376,9 @@ func _physics_process(delta: float) -> void:
 		_update_slide_state(delta)
 		_update_muzzle()
 		return
+	if state == State.HANG:
+		_update_climb(delta)
+		return
 	_update_turning(delta, turbo)
 
 	var forward_input := Input.get_axis(&"move_back", &"move_forward")
@@ -376,11 +397,106 @@ func _physics_process(delta: float) -> void:
 
 	_update_vertical(delta, on_floor)
 	_update_inside_bodies()
+	var previous := global_position
 	move_and_slide()
+	if _grab_ledge(previous):
+		return
 	_update_items()
 	_update_firing()
 	_update_state(delta, forward_input, strafe_input)
 	_update_muzzle()
+
+
+## Grabs a ledge (`damp_ledge_grab`): falling (at least 0.25 u/s) while moving forward, the path
+## of a point 4.6 above the feet and 1, 2 or 3 units ahead crosses a flat surface (|nz| ≥ 0.85);
+## the edge towards Kurt must be faced within 30° and there must be room above it. Kurt then hangs
+## 1 unit from the edge, 4.6 below it, facing it.
+func _grab_ledge(previous: Vector3) -> bool:
+	if velocity.y > LEDGE_SPEED or forward_speed <= 0.0 or is_on_floor() or health == 0 			or state in [State.DEAD, State.KNOCKED, State.THROW, State.HANG]:
+		return false
+	var space := get_world_3d().direct_space_state
+	var facing := get_facing()
+	var up := Vector3.UP * LEDGE_HEIGHT
+	for i in range(1, 4):
+		var ray := PhysicsRayQueryParameters3D.create(previous + up + facing * i, global_position + up + facing * i,
+				MDKScriptRuntime.LEVEL_LAYER)
+		var hit := space.intersect_ray(ray)
+		if hit.is_empty():
+			continue
+		if absf(hit.normal.y) < LEDGE_FLAT:
+			return false
+		return _hang_from(hit.position, facing * i)
+	return false
+
+
+## Finds the edge between the ledge point `top` and Kurt (`step` back), checks the angle and the
+## room, and hangs Kurt from it.
+func _hang_from(top: Vector3, step: Vector3) -> bool:
+	var space := get_world_3d().direct_space_state
+	# The edge: the last point on the way back to Kurt that still has the ledge under it.
+	var edge := top
+	var samples := 40
+	for k in range(1, samples + 1):
+		var point := top - step * (float(k) / samples)
+		var down := PhysicsRayQueryParameters3D.create(point + Vector3.UP * 0.5, point + Vector3.DOWN * 0.5,
+				MDKScriptRuntime.LEVEL_LAYER)
+		if space.intersect_ray(down).is_empty():
+			break
+		edge = point
+	# Kurt faces the wall under the edge (the edge's direction − 90°), within 30° of his yaw.
+	var facing := get_facing()
+	var wall_from := edge - step + Vector3.DOWN * 1.0
+	var wall := space.intersect_ray(PhysicsRayQueryParameters3D.create(wall_from, wall_from + step * 1.5,
+			MDKScriptRuntime.LEVEL_LAYER))
+	if not wall.is_empty() and absf(wall.normal.y) < 0.5:
+		var into := Vector3(-wall.normal.x, 0.0, -wall.normal.z).normalized()
+		if rad_to_deg(facing.angle_to(into)) > LEDGE_ANGLE:
+			return false
+		facing = into
+	# Room above the edge: a box of 1 × 1 × 4 from 1 unit before it to half a unit past it, 0.5–4.5
+	# above it.
+	var room := PhysicsShapeQueryParameters3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(1.0, 4.0, 1.0)
+	room.shape = box
+	room.collision_mask = MDKScriptRuntime.LEVEL_LAYER
+	for t: float in [-0.5, 0.0, 0.5]:
+		room.transform = Transform3D(Basis(), edge + facing * t + Vector3.UP * 2.5)
+		if not space.intersect_shape(room, 1).is_empty():
+			return false
+	yaw = atan2(-facing.x, -facing.z)
+	forward_speed = 0.0
+	strafe_speed = 0.0
+	velocity = Vector3.ZERO
+	global_position = edge - facing + Vector3.DOWN * LEDGE_HEIGHT
+	firing = false
+	_gun_player.stop()
+	muzzle.visible = false
+	chute_open = false
+	_climb_ticks = 0
+	_set_state(State.HANG)
+	sprite.show_frame(sprites.get_animation("K_HANG"), 0)
+	return true
+
+
+## Climbs up the ledge (state 800): `K_HANG` at 2 ticks per frame, moving by the climb tables.
+func _update_climb(delta: float) -> void:
+	var animation := sprites.get_animation("K_HANG")
+	state_time += delta
+	var ticks := int(state_time * TICKS) - _climb_ticks
+	var facing := get_facing()
+	for i in ticks:
+		_climb_ticks += 1
+		var k := (_climb_ticks + 1) >> 1
+		if k < 15:
+			global_position.y += (CLIMB_HEIGHTS[k] - CLIMB_HEIGHTS[k - 1]) * CLIMB_SCALE
+			global_position -= facing * (CLIMB_BACK[k] - CLIMB_BACK[k - 1]) * CLIMB_SCALE
+	velocity = Vector3.ZERO
+	var last := animation.frame_count * 2 - 1
+	if _climb_ticks >= last:
+		_set_state(State.STILL)
+		return
+	sprite.show_frame(animation, mini(_climb_ticks / 2, animation.frame_count - 1))
 
 
 func _update_inside_bodies() -> void:

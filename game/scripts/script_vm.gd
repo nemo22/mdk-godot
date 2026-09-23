@@ -1003,7 +1003,7 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			obj.velocity += MDKScriptRuntime.to_mdk(runtime.kurt.velocity) * o[0]
 		217:  # global_573c4c_add (a count shown after the level)
 			if o[0] == 1:
-				runtime.global_573c4c += o[1]
+				GameState.stats.head_shots += o[1]
 		202:  # set_574304: how the sky is drawn (0 normally)
 			runtime.sky_mode = o[0]
 

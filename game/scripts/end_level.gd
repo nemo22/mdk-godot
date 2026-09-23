@@ -3,9 +3,11 @@
 ##
 ## The visible triangles of Kurt's arena are taken from the highest down: each tick 0–7 more are
 ## torn off and fly up (`vz += 0.025` per tick) spinning around Kurt (the spin grows by 0.15° per
-## tick up to 2.5°), until they're 500 above him. Kurt takes off (`K_TAKEOF`, then `K_FLOATC`) and
-## rises with them; once he rises faster than 3 units per tick his rise doubles, the view tilts up
-## and the screen goes white (8 per tick); past 300 the level is over.
+## tick up to 2.5°), until they're 500 above him. Kurt takes off (`K_TAKEOF`, then `K_FLOATC`), turns ever
+## faster (0.15° per tick², up to 2.5° per tick) and rises with them (0.025 per tick²); once he rises
+## faster than 3 units per tick his rise speeds up three times as fast and the view tilts up (22.5°
+## per second, to `(−60 − the arena's pitch) / 2` more), then the screen goes white (8 per tick);
+## past 300 the level is over.
 class_name MDKEndLevel
 extends Node3D
 
@@ -15,6 +17,9 @@ const SPIN_MAX := 2.5
 const LIMIT := 500.0
 const PIECES_PER_TICK := 8
 const FAST_RISE := 3.0
+const TURN_GROWTH := 0.15
+const TURN_MAX := 2.5
+const TILT_SPEED := 22.5
 const FLASH_STEP := 8.0
 const FLASH_END := 300.0
 ## The arena meshes are rebuilt without the torn-off triangles this often (ticks).
@@ -42,7 +47,10 @@ var _kurt_vz := 0.0
 var _flash := 0.0
 var _ticks := 0
 var _takeoff := 0.0
+var _turn := 0.0
 var _done := false
+## Added to the camera pitch (degrees, negative looks up; `0x573b1c`).
+var pitch_offset := 0.0
 
 
 func _ready() -> void:
@@ -103,8 +111,12 @@ func update(ticks: float) -> void:
 		if piece.center.z > limit:
 			_pieces.remove_at(i)
 	_build_mesh()
-	# Kurt takes off and rises.
-	_kurt_vz += RISE * ticks * (2.0 if _kurt_vz > FAST_RISE else 1.0)
+	# Kurt takes off, turns and rises (0x40b558).
+	_turn = minf(_turn + TURN_GROWTH * ticks, TURN_MAX)
+	kurt.yaw -= deg_to_rad(_turn * ticks)
+	_kurt_vz += RISE * ticks
+	if _kurt_vz > FAST_RISE:
+		_kurt_vz += RISE * ticks * 2.0
 	kurt.global_position.y += _kurt_vz * ticks
 	_takeoff += ticks
 	var takeoff := kurt.sprites.get_animation("K_TAKEOF")
@@ -112,12 +124,18 @@ func update(ticks: float) -> void:
 		kurt.sprite.show_frame(takeoff, int(_takeoff))
 	else:
 		kurt.sprite.show_frame(kurt.sprites.get_animation("K_FLOATC"), int(_takeoff))
-	if _kurt_vz > FAST_RISE:
-		_flash += FLASH_STEP * ticks
-		kurt.white_flash = minf(_flash, 255.0)
-		if _flash > FLASH_END:
-			_done = true
-			finished.emit()
+	if _kurt_vz <= FAST_RISE:
+		return
+	# The view tilts up, then the screen goes white.
+	var tilt: float = (-60.0 - runtime.level.arena_pitch.get(_arena, 4.0)) * 0.5
+	if pitch_offset > tilt:
+		pitch_offset = maxf(pitch_offset - TILT_SPEED * ticks / 30.0, tilt)
+		return
+	_flash += FLASH_STEP * ticks
+	kurt.white_flash = maxf(kurt.white_flash, minf(_flash, 255.0))
+	if _flash > FLASH_END:
+		_done = true
+		finished.emit()
 
 
 func _build_mesh() -> void:

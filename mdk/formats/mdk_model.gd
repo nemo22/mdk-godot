@@ -27,11 +27,13 @@ var reference_points := PackedVector3Array()
 var bounds := AABB()
 
 
-static func parse(p_name: String, bytes: PackedByteArray, offset: int) -> MDKModel:
+## `has_flags` false: the model has no leading flags word and a single unnamed part (`XGHEAD` of
+## `STATS.BNI`, the fall's models).
+static func parse(p_name: String, bytes: PackedByteArray, offset: int, has_flags := true) -> MDKModel:
 	var model := MDKModel.new()
 	model.name = p_name
 	var r := BinReader.new(bytes, offset)
-	var named_parts := r.u32() != 0
+	var named_parts := r.u32() != 0 if has_flags else false
 	var material_count := r.u32()
 	for i in material_count:
 		# The game keeps the first 10 characters.

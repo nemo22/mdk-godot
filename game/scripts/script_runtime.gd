@@ -79,8 +79,6 @@ var kurt_yaw := 0.0
 var alien_target: MDKObject
 ## Ticks the alarm keeps sounding (`0x573aec`), set by objects with movement command 15.
 var alarm_ticks := 0
-## A count the scripts keep (`0x573c4c`, opcode 217), shown after the level.
-var global_573c4c := 0
 ## How the sky is drawn (`0x574304`, opcode 202): 0 normally.
 var sky_mode := 0
 ## Option toggled by cheat codes (`if_option`, the original's `0x5742dc`), 1 by default.
@@ -148,6 +146,7 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	level = p_level
 	kurt = p_kurt
 	vm = MDKScriptVM.new(self, MDKScriptDecoder.new(level.cmi.bytes))
+	GameState.reset_stats()
 	motion = MDKObjectMotion.new(self)
 	behaviors = MDKObjectBehaviors.new(self)
 	items = MDKItems.new(self)
@@ -164,9 +163,14 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	air_strike = MDKAirStrike.new(self)
 	air_strike.used_up = GameState.strike_used
 	kurt.sniper_fire = func(type: int) -> bool:
+		var fired: bool
 		if type == 5:
-			return air_strike.call_strike(to_mdk(kurt.get_sniper_eye()), kurt_yaw, kurt.sniper_pitch)
-		return sniper_rounds.fire(type, to_mdk(kurt.get_sniper_eye()), kurt_yaw, kurt.sniper_pitch, sniper_target)
+			fired = air_strike.call_strike(to_mdk(kurt.get_sniper_eye()), kurt_yaw, kurt.sniper_pitch)
+		else:
+			fired = sniper_rounds.fire(type, to_mdk(kurt.get_sniper_eye()), kurt_yaw, kurt.sniper_pitch, sniper_target)
+		if fired:
+			GameState.stats.sniper_shots += 1
+		return fired
 	kurt.updraft = func(vz: float, dt: float) -> float:
 		return fans.query(current_arena, to_mdk(kurt.global_position), vz, MDKFans.MASK_KURT, dt)
 	kurt.item_used.connect(items.use_item)
@@ -661,6 +665,7 @@ func _end_level() -> void:
 	if level_over:
 		return
 	level_over = true
+	GameState.town_flags = global_flags
 	kurt.stop_firing()
 	play_sound_at("NUKE", kurt_position)
 	play_sound_at("TORNADO", kurt_position)
@@ -703,6 +708,7 @@ func spawn(parent: MDKObject, type_name: String, mdk_position: Vector3, yaw: flo
 		obj.flags = SPAWN_FLAGGED_FLAGS
 	add_child(obj)
 	objects.push_back(obj)
+	GameState.count_enemy(type_name, false)
 	# The object type's init script runs once at creation.
 	var init_script: int = level.cmi.object_scripts.get("%s$%s" % [parent.arena, type_name], 0)
 	if init_script:
@@ -848,6 +854,7 @@ func fire_chain_gun() -> void:
 	var damage := CHAIN_GUN_DAMAGE * (6 if super_gun else 1)
 	if super_gun:
 		kurt.inventory.tick_super_chain_gun(1)
+	GameState.stats.shots += 6
 	var best: MDKObject = null
 	var best_score := -1.0
 	var best_part := -1
@@ -979,6 +986,7 @@ static func _is_weak_part(obj: MDKObject, index: int) -> bool:
 func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3, damage: int, super_gun: bool) -> void:
 	var center := bounds.get_center()
 	var direction := rad_to_deg(atan2(center.y - origin.y, center.x - origin.x))
+	GameState.stats.shot_hits += 1
 	obj.hit_event = -1
 	if part >= 0 and part < obj.part_health.size():
 		obj.part_health[part] -= damage
@@ -1005,6 +1013,7 @@ func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3, da
 		# The super chain gun throws what it kills away.
 		var push := Vector2.from_angle(deg_to_rad(direction)) * 20.0
 		obj.velocity += Vector3(push.x, push.y, 0.0)
+	GameState.count_enemy(obj.type_name, true)
 	kill(obj, direction + 180.0)
 
 

@@ -362,6 +362,7 @@ func _hit_object(round: Round, obj: MDKObject, part: int, point: Vector3) -> voi
 	obj.hit_direction = round.yaw
 	obj.shot_part = part + 1
 	obj.shot_point = point
+	GameState.stats.sniper_hits += 1
 	if round.type >= 2:
 		_explode(round, 25.0, obj)
 		return
@@ -369,6 +370,7 @@ func _hit_object(round: Round, obj: MDKObject, part: int, point: Vector3) -> voi
 		obj.health -= DAMAGE
 	if obj.health <= 0:
 		obj.health = 0
+		GameState.count_enemy(obj.type_name, true)
 		runtime.kill(obj, round.yaw + 180.0)
 		_end(round, State.KILLED, 45.0)
 	else:

@@ -375,6 +375,8 @@ func blast(center: Vector3, damage: int, radius: float, targets: int, hit_type: 
 			obj.hit_type = hit_type
 			obj.hit_direction = direction
 			if obj.health < 1:
+				if count_kills:
+					GameState.count_enemy(obj.type_name, true)
 				runtime.kill(obj, direction + 180.0)
 	if targets & 1:
 		var kurt_point := runtime.kurt_position + Vector3(0, 0, 1)

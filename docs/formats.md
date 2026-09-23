@@ -257,7 +257,10 @@ Kurt's extra sprite animations for a level are kept in its `LEVELnS.SNI` instead
 - `MISC/MDKFONT.FTI`: `u32 size, u32 count`, then per entry `char[8] name, u32 offset` (relative to
   file offset 4) ✅. Entries:
   - texts (NUL-terminated, `\n` escapes for line breaks) ✅: `OPT0`–`OPT4` (main menu), `OM_*` (options),
-    `KM_*` (key names), `PAUSED`, …
+    `KM_*` (key names), `PAUSED`, …; the between-level texts `ST_*`, `DEBTOP`, `DEBBOT`,
+    `DEB1`–`DEB4` + `S`/`F`/`FS`/`SS`/`SF`, `BRIEF1`–`BRIEF5` use more codes (`\c`, `\20n`, …; see
+    [gameplay.md](gameplay.md#statistics-and-briefing-state-6)). The backslash codes are literal
+    characters in the file, interpreted when drawn.
   - `SYS_PAL`: 64 colors, the same as the first 64 of `MDKOPT`'s palette ✅
   - `FONTBIG`, `FONTSML`: 256 `u32` glyph offsets (relative to the font, 0 = no glyph: a space of 6
     or 4 pixels), then per glyph `s8 ascent, s8 descent, u8 width` and
@@ -268,3 +271,65 @@ Kurt's extra sprite animations for a level are kept in its `LEVELnS.SNI` instead
     128–159 for the key settings.
   - `F8`: 8 × 8 bitmap font (128 characters) ✅
   - `SND_PUSH`: menu sound (RIFF WAV) ✅
+
+## Statistics files ✅
+
+Used by the between-level screens (see [gameplay.md](gameplay.md#statistics-and-briefing-state-6));
+[`tools/python/mdk_stats.py`](../tools/python/mdk_stats.py) decodes and previews them.
+
+- `MISC/STATS.BNI` (BNI archive, 17 entries):
+  - `CGUN`, `SNIPER`, `RICO1`–`RICO3`, `ALDIE`, `XGHEAD1`, `XGHEAD2`, `TELETYPE`: RIFF WAV sounds.
+  - `PAL`: a bare 768-byte palette (the Score-O-matic's colours 64–255).
+  - `XGHEAD`: a model in the `model_parse` layout **without** the leading `u32 flags` (parsed as
+    flags 0: one unnamed part): 3 materials (`XG_BOD`, `PEN_255`, `XG_BACK`), 8 vertices,
+    12 triangles, box about ±1.
+  - `L1_INTRM`, `L1_MAP`–`L5_MAP`: 216772 bytes = a 768-byte palette, `u16 width, u16 height`
+    (600 × 360), then the pixels (like `MDKOPT`). Their colours 1–63 are the system colours of
+    `SYS_PAL`; index 0 is magenta in `L1_INTRM` and `PAL`, black in the maps.
+- `MISC/STATS.MTI`: a texture archive like `LEVELnS.MTI` (internal name `STATS.MAT`, 40 entries):
+  `XG_BACK` (128 × 128), `XG_BOD` (256 × 283), `NONE` and palette colours `PEN_n` (some map to
+  another index, e.g. `PEN_186` = 194, `PEN_211` = 37).
+
+## Fall files (`FALL3D/`) ✅
+
+The fall minigame (see [gameplay.md](gameplay.md#the-fall-state-2-fall_3dc)) has its own files;
+`tools/python/fall3d_dump.py` lists them and exports PNGs.
+
+- **`FALL3D.BNI`** (BNI archive):
+  - Models without the leading `u32 flags` of the arena model format (`model_parse`): the game passes
+    "named parts" from a table instead (bit 7 of 0x490ca4): `KURT` (2 materials `CB3`, `CF3`,
+    18 named parts), `MISSILE`, `CHUTE`, `BONES`, `SW_DUMMY`, `SW_H150`, `SW_THUMP`, `SW_TWIST`,
+    `SW_INTER` have named parts; `EXPLODE`, `SW_BONES`, `SW_GATT`, `SW_HGREN`, `SW_HBOMB`, `SW_HOME`,
+    `SW_LGREN`, `SW_SGREN`, `SW_SHOT`, `SW_H01`, `SW_H25`, `SW_H50`, `SW_H100`, `SW_KEY` have one.
+  - Model animations in the arena animation format: `KURTANIM` (18 tracks, 199 frames), `KURT_HIT`
+    (18, 30), `BONESANM` (27, 31).
+  - Palettes (768 bytes, 8-bit RGB): `SPACEPAL` (the intro), `FALLP1`–`FALLP5` (one per fall; the
+    game forces colour 0 to black). The first 64 colours are the same in all six.
+  - Plain images (`u16 w, h`, pixels): `SPACE` 600 × 360, `MOON` 128², `EARTH` 512² (these three
+    use `SPACEPAL`), `FLARE1` 32², `FLARE2` 48², `FLARE3` 16², `FLARE4` 64², `PICK` 64²,
+    `SKULL` 256², and HUD copies `SC_STAT`/`SC_BSTAT` 84 × 63, `SNIP_TXT` 80 × 12.
+  - RLE sprite animations (like `K_*`): `PICKUPS` (9 frames, the inventory icons), `BANG` (26 frames,
+    unused ❓).
+  - `ZOOM0000`–`ZOOM0015`: the haze overlay frames. `u32 size`, then 180 records (one per pair of
+    screen rows): `u32 nL, u8 left[4 nL], u32 nM, u32 nR, u8 right[4 nR]`, with
+    nL + nM + nR = 150 groups of 4 pixels. `left`/`right` hold one byte per pixel (1–8, the blend
+    table offset); the nM middle groups are plain. They draw a clear ellipse in the middle and
+    radial streaks around it.
+  - `FALLPU_1`–`FALLPU_5`: the pickups dropped during the fall, 12-byte records `char[12]` (a
+    pickup model name, NUL-padded) ended by a record starting with 0. `FALLPU_1`: `SW_HOME`,
+    `SW_GATT`, `SW_HOME`; the others: `SW_GATT`, `SW_HBOMB`, `SW_SGREN`, `SW_HOME` (dropped from the
+    last one).
+- **`FALL3D_n.MTI`** (texture archive, internal name `FALL3D_n.MAT`, n = level index + 1):
+  - `LEVELn` 1024 × 1024: the ground, seen from above.
+  - `PODn` 64 × 1024: the minecrawler's track, copied into `LEVELn` row by row under the crawler
+    (the same rows; the top ≈ 130 rows are plain ground).
+  - `Ln_C0001`–`Ln_C0008` 64 × 108: the minecrawler's animation frames (drawn as sprites).
+  - The model textures: `CB3`, `CF3` (Kurt), `CHUTE`, `MISSILE`, `EXPLODE` (animated, 26 frames of
+    128², kind 0x10001), `BONEHEAD`, `BONEBOD`, `SW_*` (pickups), and palette colours `GREY1`…`GREY31`
+    (indices 17–47), `BLACK` (0).
+- **`FALL3D.SNI`** (SNI archive, 23 sounds): `WINDLOOP` and `C_GRIND` (flags 1, looped), `EXPLODE1`,
+  `EXPLODE2`, `R_START`, `R_MOVE`, `M_PASS`, `M_LNCH`, `P_CHUTE`, `P_COLL`, `P_FALL`, `BONES`,
+  `K_HIT1`–`K_HIT7`, `K_FINISH`, `K_COLL1`, `K_COLL2`, `K_SEEN`.
+- **`RADAR`** isn't in the files: the game builds it (0x412f94) from 46 triangles
+  `u8 v0, v1, v2, colour` at 0x40fec0 (in the code section) over 25 vertices it recomputes each
+  frame.

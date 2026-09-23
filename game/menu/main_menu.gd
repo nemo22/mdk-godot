@@ -1,7 +1,9 @@
 ## The main menu: original background, texts and music. The original font isn't decoded yet.
 ##
 ## Game command line options (`--level`, `--viewer`, `--screenshot`, …) skip the menu,
-## unless `--menu` is given; `--options` and `--controls` open those screens.
+## unless `--menu` is given; `--options` and `--controls` open those screens; `--stats=N` shows the
+## screens after LEVELn (`--phase=1…4` starts at a page, `--counts=shots,hits,sniper,sniper hits,
+## kills,enemies,heads`, `--towns=bits`) and `--briefing=N` its briefing.
 extends Control
 
 
@@ -16,6 +18,12 @@ var level_index := 0
 
 func _ready() -> void:
 	var args := Args.get_all()
+	if args.has("stats") or args.has("briefing"):
+		# Tests: the screens after LEVELn (`--stats=N`) or its briefing (`--briefing=N`).
+		GameState.level = int(args.get("stats", args.get("briefing", "7")))
+		StatsScreen.briefing_only = args.has("briefing")
+		get_tree().change_scene_to_file.call_deferred("res://game/menu/stats_screen.tscn")
+		return
 	if args.has("level") or args.has("viewer") or args.has("models") or (args.has("screenshot") and not args.has("menu")):
 		get_tree().change_scene_to_file.call_deferred("res://game/main.tscn")
 		return
@@ -95,7 +103,9 @@ func _on_new_game() -> void:
 	GameState.level = GameState.ORDER[level_index]
 	GameState.deaths = 0
 	GameState.strike_used = false
-	get_tree().change_scene_to_file("res://game/main.tscn")
+	# The briefing, then the level.
+	StatsScreen.briefing_only = true
+	get_tree().change_scene_to_file("res://game/menu/stats_screen.tscn")
 
 
 func _on_level() -> void:

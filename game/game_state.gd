@@ -20,9 +20,22 @@ var level := 7
 var deaths := 0
 ## The one air strike of the last two levels was used (`0x57440b`).
 var strike_used := false
+## The level's counts shown by the Score-O-matic (see docs/gameplay.md, "Statistics and briefing"):
+## chain gun shots (6 per tick of fire, `0x573c3c`) and ticks on target (`0x573c40`), sniper
+## rounds (`0x573c44`) and their hits on objects (`0x573c48`), head shots (`0x573c4c`, opcode 217),
+## enemies created (`0x573c50`) and killed by Kurt (`0x573c54`). The port clears them when a level
+## starts (the original's reset wasn't found ❓).
+var stats := {}
+## The town flags at the end of the level (`0x57440f`), for the debriefing.
+var town_flags := 0
+## The object types that count as enemies (`0x491c38`).
+const ENEMY_TYPES := ["XB", "XB1", "XB2", "XB3", "XBSHARK", "XBSHIP", "XBT", "XC", "XCARGO", "XD", "XD6GUN",
+		"XE", "XEARTH", "XF", "XFORK", "XG", "XG_BOMB1", "XGEN", "XGHTARG", "XGSNOW", "XGSMOKE", "XG_MISS",
+		"XGTARG", "XGUNTA", "XM3", "XMART", "XPER", "XS", "XT", "XTANK", "XTGUN", "XTUR", "XU"]
 
 
 func _ready() -> void:
+	reset_stats()
 	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
 	# The original deletes `LASTGAME.SAV` when it quits.
 	DirAccess.remove_absolute(_path(LAST_GAME))
@@ -71,6 +84,16 @@ func list_games() -> PackedStringArray:
 			names.push_back(file.get_basename())
 	names.sort()
 	return names
+
+
+func reset_stats() -> void:
+	stats = {shots = 0, shot_hits = 0, sniper_shots = 0, sniper_hits = 0, head_shots = 0, enemies = 0, kills = 0}
+
+
+## Counts an enemy created (0x43bc20) or killed by Kurt (0x43357c), by its type.
+func count_enemy(type_name: String, killed: bool) -> void:
+	if type_name.to_upper() in ENEMY_TYPES:
+		stats["kills" if killed else "enemies"] += 1
 
 
 ## The index (0–5) of a LEVELn number in the order of play.

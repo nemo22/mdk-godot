@@ -188,13 +188,16 @@ func _probe(at: PackedFloat64Array) -> void:
 				print("triangle %s %d z %.1f flags %x material %d" % [arena_name, tri, z, arena.triangle_flags[tri], arena.triangle_materials[tri]])
 
 
-## The level is over: go on to the next one in the order of play after a while, or back to the menu
-## after the last one.
+## The level is over: the statistics and the next briefing (below index 4, `StatsScreen`), or the
+## next level at once (LEVEL5 after LEVEL8), or back to the menu after the last one.
 func _on_level_ended(game_over: bool) -> void:
 	await get_tree().create_timer(5.0 if game_over else 0.5).timeout
 	var index := GameState.index_of(level.number)
 	if game_over or index < 0 or index + 1 >= GameState.ORDER.size():
 		get_tree().change_scene_to_file("res://game/menu/main_menu.tscn")
+	elif index < 4:
+		StatsScreen.briefing_only = false
+		get_tree().change_scene_to_file("res://game/menu/stats_screen.tscn")
 	else:
 		GameState.level = GameState.ORDER[index + 1]
 		get_tree().reload_current_scene()
