@@ -50,7 +50,7 @@ Index 0 is forced to black and is transparent in sprites. Sprites (`BNI`) only u
 
 | Offset | Type | Description |
 | --- | --- | --- |
-| 0x00 | u32 | ❓ (0) |
+| 0x00 | u32 | Index of the arena Kurt starts in (block 2 order; 0 in every level) ✅ |
 | 0x04 | f32[3] | Player start position ✅ |
 | 0x10 | f32 | Player start angle in degrees (90 faces +Y) ✅ |
 | 0x14 | u32 | Sky: palette index filling the screen above the panorama ✅ |
@@ -76,7 +76,13 @@ level 3; other levels use other prefixes (`MEAT_n`, `OLYM_n`, `DANT_n`, …). Na
 Each records list is `u32 count`, then 36-byte records:
 `u32 type, s32 id, f32 angle, f32 x, f32 y, f32 z, char[12] name`. Types seen: 1, 3 (in corridors),
 2 (alien, `name` refers to a CMI script), 5 (cover spots for `find_cover_spot`, the game keeps the
-list at `arena+0x38`/`+0x3c`), 6 (connection, id 1000+), 7, 8. ❓
+list at `arena+0x38`/`+0x3c`), 6 (connection, see below), 7, 8. ❓
+
+**Connections** (type 6) come in pairs with the same id (1000+), one in an arena and one in its
+corridor. The `angle` field is the direction Kurt crosses in (0 −x, 1 +x, 2 −y, 3 +y, 6 and 7 along
+z), `x, y, z` and the 12 name bytes (3 × f32) are the corners of the doorway. Every frame 0x41c550
+checks whether Kurt's move crossed a connection of his arena inside the doorway; if so he's in the
+other arena (see [engine.md](engine.md#kurts-arena)). ✅
 
 ### Block 3: palette ✅
 

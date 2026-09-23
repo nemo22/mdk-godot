@@ -6,6 +6,8 @@ extends RefCounted
 var bytes := PackedByteArray()
 var palette: MDKPalette
 
+## Index in `arenas` of the arena Kurt starts in (`level_load` 0x41b0c0; 0 in every level).
+var start_arena := 0
 ## Player start position (MDK coordinates) and angle (degrees; 90 faces +Y).
 var start_position := Vector3()
 var start_angle := 0.0
@@ -47,7 +49,7 @@ func _parse() -> void:
 
 	# Block 0: level settings.
 	var r0 := BinReader.new(bytes, _block(0))
-	var _unknown := r0.u32()
+	start_arena = r0.u32()
 	start_position = r0.vec3()
 	start_angle = r0.f32()
 	sky_top_color = r0.u32()

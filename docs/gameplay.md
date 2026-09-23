@@ -242,6 +242,10 @@ floor normal `0x573bfc`… = (0, 0, 1), state 807. The chain gun stops.
   it; in the last two levels (index > 3: LEVEL8 and LEVEL5) there's only one strike and it dives
   into the target (a 450-damage blast).
 - **Sounds**: `SNIPERON`, `SNIPEROFF`, `BREATH`, `ZOOM`, `SNIPERSHOT`, `SNIPRELD`, `RASPBER`.
+- The round models (`SW_SHOT`…) stand upright, their length along +Z: in flight the nose (+Z) is
+  turned to the direction and the spin is around the length.
+- The port also zooms with the mouse wheel (a notch holds the zoom key for 6 ticks); in sniper
+  mode the wheel doesn't step through the ammo types, the item keys still do.
 - The port has all of it but the 3D clip on the screen and the iris around the air strike's target
   (`MDKSniperRounds`, `MDKAirStrike`, `SniperOverlay`; the round cameras are `SubViewport`s). The
   air strike's curve goes through the same 5 points with Godot's `Curve3D`, not the original's

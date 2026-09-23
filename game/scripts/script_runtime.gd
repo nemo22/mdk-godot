@@ -231,8 +231,11 @@ func is_sound_playing(sound_name: String) -> bool:
 
 
 ## Moves Kurt (`teleport_player`): within the arena with a white flash when `arena_name` is empty,
-## otherwise into that arena (the port keeps every arena where it is, so it's the same).
+## otherwise into that arena (the port keeps every arena where it is, but shows one Kurt couldn't
+## walk into).
 func teleport_kurt(arena_name: String, mdk_position: Vector3, yaw: float) -> void:
+	if not arena_name.is_empty():
+		level.enter_arena(arena_name)
 	kurt.teleport(MDKMeshBuilder.to_godot(mdk_position), deg_to_rad(yaw - 90.0))
 	if arena_name.is_empty():
 		kurt.white_flash = maxf(kurt.white_flash, 255.0)

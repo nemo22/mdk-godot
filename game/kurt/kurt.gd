@@ -88,6 +88,8 @@ const ZOOM_MIN := 0.25
 const ZOOM_ACCELERATION := 0.01
 const ZOOM_MAX_SPEED := 0.15
 const ZOOM_DECAY := 0.015
+## The port also zooms with the mouse wheel: a notch holds the zoom key for this many ticks.
+const ZOOM_WHEEL_TICKS := 6.0
 ## Falling this fast (or rising) ends sniper mode.
 const SNIPER_FALL_SPEED := -30.0
 ## Rounds in the clip, and the clip timer (`0x5743eb`): it drops by 4 per second, a shot adds 1
@@ -201,6 +203,10 @@ var sniper_fire: Callable
 var _look_speed := Vector2.ZERO
 var _mouse_look := Vector2.ZERO
 var _zoom_speed := 0.0
+## Mouse wheel zoom: ticks left and direction (−1 in, 1 out). The wheel then doesn't change the ammo.
+var _wheel_ticks := 0.0
+var _wheel_direction := 0.0
+var _wheel_used := false
 var _shot_ticks := 0
 var _breath_player: AudioStreamPlayer
 var _zoom_player: AudioStreamPlayer
@@ -316,6 +322,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_mouse_look += motion * zoom
 		else:
 			_mouse_turn -= motion.x
+	elif sniping and event is InputEventMouseButton and event.pressed 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		var direction := -1.0 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
+		_wheel_ticks = ZOOM_WHEEL_TICKS if direction != _wheel_direction else _wheel_ticks + ZOOM_WHEEL_TICKS
+		_wheel_direction = direction
+		_wheel_used = true
 
 
 func _physics_process(delta: float) -> void:
@@ -418,6 +429,7 @@ func _enter_sniper(on_floor: bool) -> void:
 	_mouse_look = Vector2.ZERO
 	_mouse_turn = 0.0
 	_zoom_speed = 0.0
+	_wheel_ticks = 0.0
 	sniper_pitch = 0.0
 	zoom = 1.0
 	clip_rounds = 0
@@ -466,10 +478,12 @@ func _update_sniper(delta: float, turbo: bool, on_floor: bool) -> void:
 	sniper_pitch = clampf(sniper_pitch + _look_speed.y * scale + _mouse_look.y, -SNIPER_PITCH_LIMIT, SNIPER_PITCH_LIMIT)
 	_mouse_look = Vector2.ZERO
 	_update_zoom(delta)
-	if Input.is_action_just_pressed(&"item_next"):
-		select_ammo(1)
-	elif Input.is_action_just_pressed(&"item_prev"):
-		select_ammo(-1)
+	if not _wheel_used:
+		if Input.is_action_just_pressed(&"item_next"):
+			select_ammo(1)
+		elif Input.is_action_just_pressed(&"item_prev"):
+			select_ammo(-1)
+	_wheel_used = false
 	var strafe_input := Input.get_axis(&"strafe_left", &"strafe_right")
 	strafe_speed = _accelerate(strafe_speed, strafe_input, turbo, 1.0, 1.0, delta)
 	var max_strafe := (MAX_SPEED_TURBO if turbo else MAX_SPEED) * SNIPER_STRAFE
@@ -498,6 +512,10 @@ func _look_accelerate(speed: float, input: float, turbo: bool, delta: float) -> 
 func _update_zoom(delta: float) -> void:
 	var ticks := delta * TICKS
 	var direction := Input.get_axis(&"zoom_in", &"zoom_out")
+	if _wheel_ticks > 0.0:
+		_wheel_ticks -= ticks
+		if direction == 0.0:
+			direction = _wheel_direction
 	if direction != 0.0:
 		_zoom_speed = clampf(_zoom_speed + direction * ZOOM_ACCELERATION * ticks, -ZOOM_MAX_SPEED, ZOOM_MAX_SPEED)
 	else:

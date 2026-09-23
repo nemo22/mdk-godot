@@ -159,6 +159,8 @@ func _make_visual(round: Round) -> void:
 		return
 	round.visual = MDKObject.new()
 	round.visual.setup(MODELS[round.type], model, runtime.get_resolver(runtime.current_arena))
+	# The orientation is set as a whole (see `_visual_basis`).
+	round.visual.flags |= MDKObject.FLAG_ROLLING
 	add_child(round.visual)
 
 
@@ -196,10 +198,14 @@ func update(ticks: float) -> void:
 		if round.visual:
 			round.visual.visible = round.state == State.FLYING
 			round.visual.mdk_position = round.position
-			round.visual.yaw = round.yaw
-			round.visual.pitch = -round.pitch
-			round.visual.roll = round.roll
+			round.visual.rolling_basis = _visual_basis(round)
 			round.visual.update_transform()
+
+
+## The round models stand upright (their length along +Z), so the nose is turned from +Z to the
+## flight direction, and the spin is around the length.
+func _visual_basis(round: Round) -> Basis:
+	return Basis(Vector3.UP, deg_to_rad(round.yaw)) * Basis(Vector3.BACK, deg_to_rad(-round.pitch)) 			* Basis(Vector3.BACK, -PI / 2.0) * Basis(Vector3.UP, deg_to_rad(round.roll))
 
 
 func _direction(round: Round) -> Vector3:

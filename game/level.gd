@@ -35,6 +35,12 @@ var arena_pitch := {}
 var arena_groups := {}
 
 var _arenas := {}
+## Arenas Kurt can't walk into: no connection (DTI record type 6) leads there and it isn't the
+## start arena. The original only draws and collides with Kurt's arena (and the one behind an open
+## door), which it changes by crossing connections (0x41c550) or by a teleport, so these are never
+## seen unless a script teleports Kurt there. Some overlap the playable arenas (level 7's `DANT_8`,
+## flat colours and glass, covers the start of `DANT_1`), so they're hidden and not solid.
+var _unreachable := {}
 var _resolvers := {}
 ## Triangles torn off at the end of the level, per arena (triangle → true).
 var _hidden_triangles := {}
@@ -55,6 +61,11 @@ func load_level(p_number: int) -> void:
 	var all_archives: Array[MDKTextureArchive] = []
 	for arena_name: String in mto.get_arena_names():
 		all_archives.push_back(mto.get_arena(arena_name).textures)
+
+	for i in dti.arenas.size():
+		var entry: Dictionary = dti.arenas[i]
+		if i != dti.start_arena and not entry.records.any(func(record: Dictionary) -> bool: return record.type == 6):
+			_unreachable[entry.name] = true
 
 	var arenas: Array[MDKArena] = []
 	for arena_name: String in mto.get_arena_names():
@@ -90,6 +101,9 @@ func load_level(p_number: int) -> void:
 			groups[group_number].triangles.push_back(tri)
 		for group_number: int in groups:
 			_build_group(arena, root, group_number, groups[group_number])
+		if _unreachable.has(arena_name):
+			root.visible = false
+			root.process_mode = Node.PROCESS_MODE_DISABLED
 		arena_groups[arena_name] = groups
 		if not resolver.missing.is_empty():
 			push_warning("%s: materials not found: %s" % [arena_name, ", ".join(resolver.missing)])
@@ -228,11 +242,22 @@ func get_floor_group(position: Vector3, exclude: Array[RID]) -> int:
 	return hit.collider.get_meta(&"group", 0) if not hit.is_empty() else 0
 
 
+## Shows an arena Kurt can only get to by a teleport, and makes it solid.
+func enter_arena(arena_name: String) -> void:
+	if _unreachable.erase(arena_name) and has_node(arena_name):
+		var root: Node3D = get_node(arena_name)
+		root.visible = true
+		root.process_mode = Node.PROCESS_MODE_INHERIT
+
+
 ## Returns the name of the (smallest) arena whose bounds contain `position`, or an empty string.
+## Arenas Kurt can't get to are left out.
 func get_arena_at(position: Vector3) -> String:
 	var best := ""
 	var best_volume := INF
 	for arena_name: String in arena_bounds:
+		if _unreachable.has(arena_name):
+			continue
 		var aabb: AABB = arena_bounds[arena_name]
 		if aabb.grow(2.0).has_point(position) and aabb.get_volume() < best_volume:
 			best = arena_name

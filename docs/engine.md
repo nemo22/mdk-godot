@@ -245,6 +245,17 @@ script target (the receiver's return point is its restart point), 43 go near the
 becomes the receiver's leader (`obj+0x138`). Selectors are listed in
 [script_opcodes.md](script_opcodes.md) (opcode 4).
 
+### Kurt's arena
+
+Kurt starts in the DTI's start arena (block 0, `level_load`) and changes arena only by crossing a
+connection (DTI record type 6, 0x41c550 every frame; the arena he left stays as `0x573a68` during
+the transition) or by a teleport (`teleport_player`, 112). Only Kurt's arena and the other arena
+of a transition are drawn and solid. Arenas that no connection leads to and that aren't the start
+arena can only be reached by a teleport; some are never used, and level 7's `DANT_8` (flat colours
+and `GLASS3`) lies over the start of `DANT_1`. The port keeps every arena loaded, but hides these
+and makes them not solid until a teleport takes Kurt there, and picks Kurt's arena from the
+smallest arena bounds that contain him.
+
 ### Doors (0x43cc68)
 
 Doors are **connectors** between an arena and a corridor, created by `spawn_connector` (opcode 149)
