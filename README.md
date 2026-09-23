@@ -8,6 +8,12 @@ A port of [MDK](https://en.wikipedia.org/wiki/MDK_(video_game)) (Shiny Entertain
 [Godot 4.7](https://godotengine.org/). It's based on reverse engineering the original game's data
 files and executable (`MDKD3D.EXE`, the Direct3D version), and it aims to play like the original.
 
+> [!IMPORTANT]
+> **You need the original game to play.** This port contains no data from MDK: no levels,
+> textures, models, sounds, music or videos. It reads them at run time from your own installed
+> copy of the original game (available for example on GOG). Without the original game data the
+> port won't run.
+
 **Status: work in progress.** The six levels load and run with the original scripts, aliens,
 weapons, items and sniper mode, but the game can't be played through from start to end yet, so
 there's no release. See [the roadmap](docs/roadmap.md).
@@ -77,4 +83,8 @@ to look around, Shift to go faster.
 ## Legal
 
 This is an unofficial fan project, not affiliated with Shiny Entertainment or the current rights
-holders of MDK. It contains no game data: you need to own the original game to run it.
+holders of MDK. MDK and its data are the property of their respective owners.
+
+This repository contains only original code, documentation and tools. It doesn't include or
+distribute any data from the game. To run the port you need a legally obtained copy of the
+original MDK, whose installed data files the port loads.
