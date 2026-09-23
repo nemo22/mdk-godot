@@ -90,10 +90,10 @@ func _path_vector(path: int, key: int, field: int) -> Vector3:
 	return Vector3(_bytes.decode_float(offset), _bytes.decode_float(offset + 4), _bytes.decode_float(offset + 8))
 
 
-## Fans lift objects with gravity (0x45e74c; not rolling objects in level 4); Kurt's thrown items
+## Fans lift objects with gravity (0x45e74c; not rolling objects in LEVEL6, index 1); Kurt's thrown items
 ## (but the mortar) also lose most of their horizontal speed in them.
 func _updraft(obj: MDKObject) -> void:
-	if runtime.level.number == 4 and obj.flags & MDKObject.FLAG_ROLLING:
+	if runtime.level.number == 6 and obj.flags & MDKObject.FLAG_ROLLING:
 		return
 	var vz := runtime.fans.query(obj.arena, obj.mdk_position, obj.velocity.z, MDKFans.MASK_OBJECTS, dt)
 	if is_nan(vz):

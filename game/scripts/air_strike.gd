@@ -4,8 +4,8 @@
 ## The point in the crosshair (within 5000 units, with open sky 1000 units above it) is the target.
 ## `X_STRIKE` flies a 5-point curve at 150 units/s, from 50 units behind Kurt at the arena's top +
 ## 30, over the target (32 above it) and away, and drops 9 `X_TOOTH` bombs (grenades) one every 15
-## units from 60 before the target to 60 after. From level 7 on there's a single strike, and it
-## dives into the target instead (450 damage within 80).
+## units from 60 before the target to 60 after. In the last two levels (index > 3: LEVEL8, LEVEL5)
+## there's a single strike, and it dives into the target instead (450 damage within 80).
 class_name MDKAirStrike
 extends RefCounted
 
@@ -23,7 +23,7 @@ const DIVE_RADIUS := 80.0
 const HIT_DIVE := -6
 
 var runtime: MDKScriptRuntime
-## The one strike of levels 7 and 8 was used (`0x57440b`).
+## The one strike of the last two levels was used (`0x57440b`).
 var used_up := false
 var _strike: MDKObject
 var _curve: Curve3D
@@ -56,7 +56,7 @@ func call_strike(eye: Vector3, yaw: float, pitch: float) -> bool:
 	if not runtime.raycast(target + Vector3(0, 0, 1), target + Vector3(0, 0, SKY)).is_empty():
 		runtime.kurt.play_sound("RASPBER")
 		return false
-	var dive := runtime.level.number >= 7
+	var dive := GameState.index_of(runtime.level.number) > 3
 	if dive:
 		used_up = true
 	_start(target, dive)

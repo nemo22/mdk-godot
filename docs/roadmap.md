@@ -31,30 +31,33 @@
   and camera shots) and the end of a level.
 - Effects: slime wounds, drops and bubbles, shattered triangle groups, rolling boulders, leaping
   aliens, level 6's shooting galleries, the camera tilting up at bosses.
+- The order of play (LEVEL7, 6, 3, 4, 8, 5), loading screens, the end of level (the arena torn
+  apart around Kurt as he rises), dying back to the menu with "Continue", saved games.
 - Aliens plan detours around walls (`plan_move`), replan when stuck, and bank into their turns.
 - Sniper mode: the scope screen, zoom, target lock, the clip and rounds (bullets, homing bullets,
   grenades, homing grenades, the mortar and its guidance by `bomb_follow_path`), Bones' air strike,
   the round cameras, bullet holes.
-- Options in the main menu (volumes, music filter, mouse, fullscreen, difficulty), saved in
+- Options in the main and pause menus (volumes, music filter, mouse, fullscreen, difficulty, keys),
+  saved in
   `user://settings.cfg`; music and effects on their own buses with a limiter.
 
 ## Next
 
-1. **Aliens and scripts**: sparks
-   and explosions' debris, the full-screen strike of Bones and the end of level break-up, the
+1. **Aliens and scripts**: sparks and explosions' debris, the full-screen strike of Bones, the
    second arena seen through open doors.
-2. **Sniper mode**: the 3D clip on the screen and the air strike's iris; saving and loading.
+2. **Sniper mode**: the 3D clip on the screen and the air strike's iris.
 3. **Sound**: SNI sounds, arena sounds, music, footsteps.
-4. **Movement details**: ledge grab, slippery floors, conveyors, updrafts, camera roll, pushing Kurt
+4. **Movement details**: ledge grab, slippery floors, conveyors, camera roll, pushing Kurt
    away from walls instead of moving the camera closer, stopping on walls hit head-on.
-5. **Level flow**: the falling sequence (`FALL3D`), the stream between arenas (`STREAM`), end of
-   level statistics, loading screens (`LOAD_n.LBB`), saving.
+5. **Level flow**: the falling sequence (`FALL3D`), the stream between levels (`STREAM`), the
+   statistics and briefing screens, F2 snapshots and the save prompt after a level.
 
 ## Menu
 
 - Main menu (new game, load game, options, quit), pause menu, level select (partly done).
-- Options: sound volumes, music filter, mouse, fullscreen and difficulty are done; still to do: key
-  bindings, the enhanced mode below. The pause menu (Esc) has resume, options, main menu, quit.
+- Options: sound volumes, music filter, mouse, fullscreen, difficulty and key bindings (one key or
+  mouse button per action) are done; still to do: the enhanced mode below. The pause menu (Esc) has
+  resume, options, main menu, quit.
 - Original assets where possible (`MISC/OPTIONS.BNI`, `MISC/MDKFONT.FTI`, menu video `MDK12.FLC`).
 
 ## Enhanced graphics mode

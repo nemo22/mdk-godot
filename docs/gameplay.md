@@ -239,12 +239,111 @@ floor normal `0x573bfc`… = (0, 0, 1), state 807. The chain gun stops.
 - **Bones' air strike** (type 5, 0x4641ac, 0x43fa0c): needs a point hit within 5000 units with open
   sky 1000 units above it and no strike out; it spawns `X_STRIKE`, which flies a 5-key spline over
   the target at 150 units/s, 30 units above the arena, dropping 9 `X_TOOTH` bombs (grenades) around
-  it; from level 6 on there's only one strike and it dives into the target (a 450-damage blast).
+  it; in the last two levels (index > 3: LEVEL8 and LEVEL5) there's only one strike and it dives
+  into the target (a 450-damage blast).
 - **Sounds**: `SNIPERON`, `SNIPEROFF`, `BREATH`, `ZOOM`, `SNIPERSHOT`, `SNIPRELD`, `RASPBER`.
 - The port has all of it but the 3D clip on the screen and the iris around the air strike's target
   (`MDKSniperRounds`, `MDKAirStrike`, `SniperOverlay`; the round cameras are `SubViewport`s). The
   air strike's curve goes through the same 5 points with Godot's `Curve3D`, not the original's
   spline parameters (0.5, 1.0, 0.5 ❓).
+
+## Level flow (game state `0x574262`, main loop 0x401cb8)
+
+| State | Frame (init) | What |
+| --- | --- | --- |
+| 0 | 0x4265c0 (0x42618c) | menu |
+| 2 | 0x4114a4 (0x410018) | the fall (`FALL3D`) |
+| 3 | `game_frame` (0x41ba68) | the level |
+| 5 | 0x4352ac (0x433b50) | the stream between levels (`STREAM`) |
+| 6 | 0x43200c (0x431b00) | statistics, debriefing, briefing |
+| 7 | — | load the last level directly |
+| 8 | 0x47727c | the end videos |
+
+- **Order of play** (`0x490030`): the level index `0x574268` (0–5) picks LEVEL7, 6, 3, 4, 8, 5.
+  `LOAD_n.LBB` and `TRAVERSE/LEVELn` use the LEVEL number; `FALL3D_n`, `FALLPn`, `FALLPU_n`,
+  `Ln_MAP`, `BRIEFn`, `DEBn…`, `OOT_Ln` use the index + 1. The index decides some rules: no town
+  timer in the last level (index 5), a single diving air strike from index 4, the fans don't lift
+  rolling objects in LEVEL6 (index 1), Bones falls with Kurt only at index 4.
+- **New game**: the level files are copied (a bar), the briefing (state 6), the fall, then the
+  level. **End of a level**: the tornado (below), the stream; below index 4 the statistics, the
+  save prompt, the next briefing, the fall; from index 4 the index becomes 5 and LEVEL5 loads
+  directly (state 7), without statistics or fall. Health at 0 after the fall or the stream is game
+  over.
+- **Loading screen** (`level_load` 0x41b0c0, drawn by 0x422a10): `MISC/LOAD_n.LBB` (768-byte
+  palette, `u16 w, h` = 200×200, pixels) centred at (200, 25) of the 600×360 screen, `LOAD_MSG`
+  "Loading" centred at y 260, a progress bar 10…590 × 290…310 (13 steps, outline colour 4) and a
+  second one at 330…350 for sub-steps.
+- **The end of a level** (`endlev.c`, 0x40a9e0 and 0x40ad9c each frame): the visible triangles of
+  Kurt's arena (and the one through an open door) are listed from the highest down; each frame
+  0–7 of the highest are hidden (flags 0x30) and fly off (0x40b280): `vz += 0.025` per tick, a spin
+  growing by 0.15° per tick² up to 2.5° per tick around Kurt; a piece goes when its centre passes
+  the limit (500 above, rising with Kurt). The screen shakes (5). Kurt takes off (state 1000
+  `K_TAKEOF`, then 1001 `K_FLOATC`) and rises with the debris (0x40b558 instead of `damp_control`);
+  once he rises faster than 3 units per tick the rise doubles, the view tilts up and the white flash
+  climbs by 8 per tick; past 300 the stream starts. The city outcome flags are kept
+  (`0x57440f` = `0x573b5c`).
+- **The fall** (`fall_3d.c`, 0x410018–0x41357c): a minigame in its own files (`FALL3D/FALL3D_n.MTI`
+  with the ground `LEVELn` 1024², the minecrawler's track `PODn` and sprites `Ln_C0001–8`;
+  `FALL3D.BNI` with the models `KURT`, `MISSILE`, `CHUTE`, `BONES`, pickups, the palettes `SPACEPAL`
+  and `FALLP1–5`, images `SPACE`, `MOON`, `EARTH`, `PICK`, `SKULL`; `FALL3D.SNI`).
+  - A 5 s intro in space (Kurt eases in, fade to white), then Kurt falls at 66.67 units/s from z
+    5270 for 30 s, seen from above (camera at 0.85 × his x/y, 10 above). He steers in x (±58.8)
+    and y (±35.3) at up to 117.6 units/s (11.76 per tick). At 30 s `K_FINISH`, he's pulled to the
+    centre, the camera slows (2 s), fades to black; the level loads after 33 s.
+  - Radars sweep a beam spot towards Kurt, pickups or random points; within 15 units (`K_SEEN`)
+    they launch missiles that home on Kurt (4–11 damage, twice on hard). Pickups
+    (`FALLPU_n`: `SW_HOME`, `SW_GATT`, `SW_HBOMB`, `SW_SGREN`) fall with chutes and are taken by
+    touching them. The ground is a textured plane where the minecrawler leaves its track. The
+    difficulty and the index set the radar speed, missile counts and intervals.
+- **The stream** (state 5, `STREAM/STREAM.BNI`, `STREAM.MTI`): Kurt steers down a generated tunnel
+  (0x434838, not decoded yet), hitting the walls hurts; Bones rescues him (`RESCUE`) after segment
+  177 or at 1 health (the Gunta variant ends at 186).
+- **Statistics** (state 6, `MISC/STATS.BNI`, `STATS.MTI`): `L1_INTRM` until a key; the debriefing
+  typed at 15 characters per second on `L<n>_MAP` (`DEBTOP`, `DEBnS`/`F`/`SS`/`SF`/`FS` by the
+  city flags, `DEBBOT`); the Score-O-matic (`ST_SCR`, `ST_DAMP` "NAME: Kurt Hectic"): shots fired
+  (`0x573c3c`) and accuracy (`0x573c40`, ticks on target), sniper rounds (`0x573c44`) and accuracy
+  (`0x573c48`), kills (`0x573c54`/`0x573c50`), head shots (`0x573c4c`, opcode 217, as spinning
+  `XGHEAD` models); then the briefing `BRIEFn` on the next map (health raised to 100, the inventory
+  emptied).
+- **In the port**: the order of play, the loading screen (`LoadingScreen`) and the end of level
+  (`MDKEndLevel`, then straight to the next level; the view doesn't tilt up yet). The fall, the
+  stream and the statistics aren't done.
+
+## Saving and loading (`savegame.c`, `optload.c`)
+
+- **Kinds** (`GAME` type): 3 = the start of a level (at its entry point, no fall), 6 = before a
+  level (the statistics and briefing, then the fall), 1003 = a full snapshot.
+- **F2** (`0x42b520(0)`, only while playing a level: game state 3, no menu, no cutscene, the level
+  not over, no `X_STRIKE` out) writes a full snapshot after asking for a name (`SV_TITLE` "Name for
+  Saved Game", up to 8 letters, digits, `_`, `$`); F3 opens the list. After each level the
+  statistics screen asks `SV_ASK` "Save Game?" and writes a type 6 (type 3 before the last level)
+  named after the level number.
+- **Death** (`damp_control` ≈ 0x466b40, once the red flash passes 255): the death counter
+  `0x574407` goes up, a light save is written to `LASTGAME.SAV` and the game goes back to the main
+  menu, where `OPT0` "Continue" loads it: the level starts again from its beginning with 100 health
+  and nothing in the inventory. `LASTGAME.SAV` is deleted when the game quits. There are no
+  checkpoints between arenas. The difficulty isn't saved (`Skill` in `MDK.CFG`).
+- **Files** `SAVES/<name>.SAV`: `u32 size, u32 checksum` (byte sum from offset 8, as stored), then
+  packets `char tag[4], u32 size, data`. The first, `SAVE` (2 bytes, plain), is an XOR key and
+  increment: every later byte is `b ^ key`, then `key += inc`. Packets (table 0x4919fc; sizes must
+  match): `THMB` (768-byte palette + a 64×45 thumbnail), `GAME` (24: type, level index 0–5,
+  unused, health 1–150 (100 in light saves), deaths, `0x57440b`), then for full snapshots `MORE`
+  (52: the size of `LEVELn.CMI` as a version, the minecrawler timers, …), `PLAY` (239: raw
+  `0x574324…`: health, inventory, ammo, clip), `DAMP` (724: Kurt's block `0x5739c0…`, with the
+  script variables and global flags), `CAME` (200, the camera), per arena `AREN` (0x466, the arena)
+  with its `ALIE` objects (0x32e each) and `FAND` fans (72), `BULL` ×3 (the sniper rounds), `SEND`.
+  Pointers are stored as offsets into the arenas or the CMI, objects as sequential ids.
+- **Loading** (0x430930) checks the size and checksum and resets the game (health 100, empty
+  inventory and ammo). A full snapshot reloads the level without entering an arena, restores
+  Kurt, the camera, each arena and its objects and fans, and re-enters Kurt's arena: he's back
+  exactly where he was.
+- **The list** (0x428cfc): `SAVES/*.SAV` by name, 13 rows, `SVOPT1` "Select Saved Game", `SVOPT3`
+  "No Saved Games Found", `SVBAD` "Invalid/Corrupt File"; the preview is `MISC/LOAD_n.LBB` (n from
+  {7, 6, 3, 4, 8, 5} by level) for light saves or the thumbnail.
+- The inventory and ammo never carry over to the next level (0x4325b0 clears them).
+- **In the port** (`GameState`): light saves as JSON in `user://saves/<NAME>.sav`, `LASTGAME` on
+  death with "Continue" in the menu, and the "Saved Game" list. The F2 snapshot and the save prompt
+  after a level aren't done yet.
 
 ## The minecrawler's timer (0x4240c4)
 

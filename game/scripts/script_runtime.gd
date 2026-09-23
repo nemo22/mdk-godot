@@ -59,6 +59,8 @@ var debris: MDKDebris
 var sniper_rounds: MDKSniperRounds
 var sniper_target: MDKObject
 var air_strike: MDKAirStrike
+## The end of the level's tornado, once it started.
+var end_level: MDKEndLevel
 ## The point and direction of the last `shatter_group` (0x4d5374, 0x4d5358).
 var shatter_point := Vector3()
 var shatter_direction := Vector3(0.0, 0.0, 1.0)
@@ -160,6 +162,7 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	sniper_rounds.runtime = self
 	add_child(sniper_rounds)
 	air_strike = MDKAirStrike.new(self)
+	air_strike.used_up = GameState.strike_used
 	kurt.sniper_fire = func(type: int) -> bool:
 		if type == 5:
 			return air_strike.call_strike(to_mdk(kurt.get_sniper_eye()), kurt_yaw, kurt.sniper_pitch)
@@ -169,7 +172,8 @@ func setup(p_level: Level, p_kurt: Kurt) -> void:
 	kurt.item_used.connect(items.use_item)
 	kurt.bomb_triggered.connect(items.trigger_bomb)
 	kurt.can_use_item = items.can_use
-	if level.number < 8:
+	# No town to save in the last level (index 5, LEVEL5).
+	if GameState.index_of(level.number) != 5:
 		town_ticks = TOWN_TICKS[kurt.inventory.difficulty]
 
 
@@ -300,6 +304,8 @@ func _tick() -> void:
 	debris.update(1.0)
 	sniper_rounds.update(1.0)
 	air_strike.update(1.0)
+	if end_level:
+		end_level.update(1.0)
 	_update_sniper_target()
 	# Only the objects of Kurt's arena are updated (0x43c7dc; the original also updates the arena
 	# seen through an open door).
@@ -646,8 +652,8 @@ func get_cutscene_camera() -> Transform3D:
 
 
 ## The end of a level (`special_event` 0–50): at the end of the frame (0x41d4d8, 0x40a9e0) Kurt
-## stops firing and the level is over (`0x573b60`), with the sounds `NUKE` and `TORNADO`. The
-## original also breaks the arena up around Kurt (`END_LEVEL`) and shows the statistics.
+## stops firing and the level is over (`0x573b60`), with the sounds `NUKE` and `TORNADO`, and the
+## arena breaks up around Kurt as he rises (`MDKEndLevel`); then the next level.
 func _end_level() -> void:
 	if level_over:
 		return
@@ -655,7 +661,10 @@ func _end_level() -> void:
 	kurt.stop_firing()
 	play_sound_at("NUKE", kurt_position)
 	play_sound_at("TORNADO", kurt_position)
-	level_ended.emit(false)
+	end_level = MDKEndLevel.new()
+	add_child(end_level)
+	end_level.finished.connect(level_ended.emit.bind(false))
+	end_level.start(self)
 
 
 ## Spawns the aliens placed by the DTI records of type 2 (`ARENA$TYPE_n` scripts).
@@ -1000,7 +1009,7 @@ func _chain_gun_hit(obj: MDKObject, part: int, bounds: AABB, origin: Vector3, da
 ## (`OOT_L1`, "There goes Laguna Beach!", or `OOT_L1A` for the second town).
 func _flatten_town() -> void:
 	raise_shake(5.0)
-	var text_name := "OOT_L%d" % (level.number - 2)
+	var text_name := "OOT_L%d" % (GameState.index_of(level.number) + 1)
 	if global_flags & FLAG_SECOND_TOWN:
 		text_name += "A"
 		global_flags |= FLAG_SECOND_TOWN_FLATTENED

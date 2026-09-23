@@ -8,6 +8,9 @@ const HOVER_COLOR := Color(1.0, 1.0, 0.8)
 const SENSITIVITIES := [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0]
 
 var click: AudioStreamPlayer
+## The controls screen waits for a key or a mouse button for this action.
+var _waiting := &""
+var _waiting_button: Button
 
 
 func clear() -> void:
@@ -80,10 +83,50 @@ func show_options(on_back: Callable) -> void:
 			func(_step: int) -> void: Settings.fullscreen = not Settings.fullscreen)
 	add_option(func() -> String: return "Difficulty: %s" % ["Easy", "Normal", "Hard"][Settings.difficulty],
 			func(step: int) -> void: Settings.difficulty = wrapi(Settings.difficulty + step, 0, 3))
+	add_item("Controls", func() -> void: show_controls(show_options.bind(on_back)))
 	add_item("Back", func() -> void:
 		Settings.save()
 		on_back.call())
 	get_child(0).grab_focus()
+
+
+## The key bindings: pressing an item waits for a key or a mouse button (Esc cancels).
+func show_controls(on_back: Callable) -> void:
+	clear()
+	add_theme_constant_override(&"separation", -8)
+	for action: StringName in Settings.ACTIONS:
+		var button := add_item("", Callable())
+		button.add_theme_font_size_override(&"font_size", 18)
+		button.text = _binding_text(action)
+		button.pressed.connect(func() -> void:
+			_click()
+			_waiting = action
+			_waiting_button = button
+			button.text = "%s: press a key…" % Settings.ACTIONS[action])
+	add_item("Default keys", func() -> void:
+		Settings.reset_bindings()
+		show_controls(on_back))
+	add_item("Back", func() -> void:
+		add_theme_constant_override(&"separation", 0)
+		Settings.save()
+		on_back.call())
+	get_child(0).grab_focus()
+
+
+func _binding_text(action: StringName) -> String:
+	return "%s: %s" % [Settings.ACTIONS[action], Settings.describe(action)]
+
+
+func _input(event: InputEvent) -> void:
+	if _waiting.is_empty() or not event.is_pressed() or event.is_echo():
+		return
+	if not (event is InputEventKey or event is InputEventMouseButton):
+		return
+	get_viewport().set_input_as_handled()
+	if not (event is InputEventKey and event.keycode == KEY_ESCAPE):
+		Settings.bind(_waiting, event)
+	_waiting_button.text = _binding_text(_waiting)
+	_waiting = &""
 
 
 func _click() -> void:

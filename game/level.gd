@@ -36,6 +36,8 @@ var arena_groups := {}
 
 var _arenas := {}
 var _resolvers := {}
+## Triangles torn off at the end of the level, per arena (triangle → true).
+var _hidden_triangles := {}
 
 
 ## Loads level `p_number` (3–8) and builds its arenas.
@@ -159,10 +161,10 @@ func get_group_centers(arena_name: String, group_number: int) -> PackedVector3Ar
 
 ## The triangles of a group, for `MDKDebris`: `[corners (MDK), UVs (scaled for the material),
 ## material]` for each triangle that has a material.
-func get_group_triangles(arena_name: String, group_number: int) -> Array:
+func get_group_triangles(arena_name: String, group_number: int, with_index := false) -> Array:
 	var group: TriangleGroup = arena_groups.get(arena_name, {}).get(group_number)
 	var result := []
-	if not group or group_number == 0:
+	if not group or group_number == 0 and not with_index:
 		return result
 	var arena: MDKArena = _arenas[arena_name]
 	for tri in group.triangles:
@@ -175,8 +177,40 @@ func get_group_triangles(arena_name: String, group_number: int) -> Array:
 		for k in 3:
 			corners.push_back(arena.vertices[arena.triangle_indices[tri * 3 + k]])
 			uvs.push_back(arena.triangle_uvs[tri * 3 + k] * uv_scale)
-		result.push_back([corners, uvs, material])
+		result.push_back([tri, corners, uvs, material] if with_index else [corners, uvs, material])
 	return result
+
+
+## The visible triangles of an arena with a material: `[triangle, corners (MDK), UVs, material]`.
+func get_arena_triangles(arena_name: String) -> Array:
+	var result := []
+	for group_number: int in arena_groups.get(arena_name, {}):
+		var group: TriangleGroup = arena_groups[arena_name][group_number]
+		if group.flags & TRIANGLE_HIDDEN:
+			continue
+		for triangle: Array in get_group_triangles(arena_name, group_number, true):
+			result.push_back(triangle)
+	return result
+
+
+## Hides single triangles (the end of the level); the meshes are rebuilt when `rebuild` is set.
+func hide_triangles(arena_name: String, triangles: PackedInt32Array, rebuild: bool) -> void:
+	if not _hidden_triangles.has(arena_name):
+		_hidden_triangles[arena_name] = {}
+	var hidden: Dictionary = _hidden_triangles[arena_name]
+	for tri in triangles:
+		hidden[tri] = true
+	if not rebuild or hidden.is_empty():
+		return
+	var arena: MDKArena = _arenas[arena_name]
+	for group_number: int in arena_groups[arena_name]:
+		var group: TriangleGroup = arena_groups[arena_name][group_number]
+		var remaining := PackedInt32Array()
+		for tri in group.triangles:
+			if not hidden.has(tri):
+				remaining.push_back(tri)
+		if remaining.size() != group.triangles.size():
+			group.mesh.mesh = MDKMeshBuilder.build_arena_mesh(arena, _resolvers[arena_name], remaining) if not remaining.is_empty() else null
 
 
 ## Gives every triangle of a group the material `value` (`group_set_texture`).

@@ -702,7 +702,7 @@ and [scripts/notes_part3.md](scripts/notes_part3.md). The main ones:
 | 0x573c74, 0x573c78 | health bar: seconds left, object shown (or the arena's own object at `arena+0x118`) |
 | 0x57ecf0 | message queue (4 × `time, flags, text`); read/write indices 0x57ece8/0x57ecec; current message 0x57ec90 (2 lines), time 0x57ece0, zoom 0x57ece4, flags 0x57ecd8 |
 | 0x574270 | ticks before the minecrawler flattens the town |
-| 0x574268 | level index (0–5 for levels 3–8); 0x57423e difficulty (0–2) |
+| 0x574268 | level index (0–5) in the order of play `0x490030` = LEVEL7, 6, 3, 4, 8, 5; 0x57423e difficulty (0–2) |
 | 0x5742a4 | the HUD is drawn (0 in cutscenes) |
 | 0x573c60 | cutscene state (0 = none), see [Cutscenes](#cutscenes-special_event-131); camera 0x599920…0x599940 |
 | 0x573c80 | arena Kurt is teleported to at the end of the frame; −1 ends the level |

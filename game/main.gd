@@ -1,7 +1,8 @@
 ## The game: a level with Kurt and the third person camera.
 ##
 ## Command line (after `--`):
-##   --level=N                 Level to load (3–8, default: the one chosen in the menu).
+##   --level=N                 LEVELn to load (3–8, default: the one chosen in the menu; played in
+##                             the order 7, 6, 3, 4, 8, 5).
 ##   --viewer                  Open the free-camera level viewer instead.
 ##   --models                  Open the model viewer instead (see `model_viewer.gd`).
 ##   --at=x,y,z[,yaw]          Start Kurt there instead (MDK coordinates and yaw, for tests).
@@ -24,6 +25,7 @@
 ##   --sniper[=zoom[,pitch]]   Enter sniper mode after the delay (zoom 1 to 0.25, pitch in degrees,
 ##                             positive looks down).
 ##   --pause                   Open the pause menu after the delay.
+##   --loading-screen=path.png Save a screenshot of the loading screen and quit.
 ##   --event=N                 Run `special_event` N after the delay (cutscenes, end of level).
 extends Node3D
 
@@ -42,9 +44,25 @@ func _ready() -> void:
 	if args.has("models"):
 		get_tree().change_scene_to_file.call_deferred("res://game/model_viewer.tscn")
 		return
+	# The loading screen shows while the level loads (the game is paused meanwhile).
+	var level_number := int(args.get("level", str(GameState.level)))
+	var loading := LoadingScreen.new()
+	loading.setup(level_number, MDKFti.load_file(MDKData.path("MISC/MDKFONT.FTI")))
+	loading.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(loading)
+	get_tree().paused = true
+	for i in 2:
+		await get_tree().process_frame
+	if args.has("loading-screen"):
+		loading.set_progress(0.4)
+		Args.screenshot_and_quit(get_tree(), args["loading-screen"], 3)
+		return
 	var start := Time.get_ticks_msec()
-	level.load_level(int(args.get("level", str(GameState.level))))
+	level.load_level(level_number)
 	print("Level %d loaded in %d ms" % [level.number, Time.get_ticks_msec() - start])
+	loading.set_progress(1.0)
+	loading.queue_free()
+	get_tree().paused = false
 
 	var sprites := MDKBni.load_file(MDKData.path("TRAVERSE/TRAVSPRT.BNI"))
 	# Kurt's sliding and surfing frames are in the level's own archive.
@@ -170,20 +188,26 @@ func _probe(at: PackedFloat64Array) -> void:
 				print("triangle %s %d z %.1f flags %x material %d" % [arena_name, tri, z, arena.triangle_flags[tri], arena.triangle_materials[tri]])
 
 
-## The level is over: go on to the next one after a while, or back to the menu after the last one.
+## The level is over: go on to the next one in the order of play after a while, or back to the menu
+## after the last one.
 func _on_level_ended(game_over: bool) -> void:
-	await get_tree().create_timer(5.0).timeout
-	if game_over or level.number >= 8:
+	await get_tree().create_timer(5.0 if game_over else 0.5).timeout
+	var index := GameState.index_of(level.number)
+	if game_over or index < 0 or index + 1 >= GameState.ORDER.size():
 		get_tree().change_scene_to_file("res://game/menu/main_menu.tscn")
 	else:
-		GameState.level = level.number + 1
+		GameState.level = GameState.ORDER[index + 1]
 		get_tree().reload_current_scene()
 
 
-## Kurt died: play the level again (the original loads the last saved game).
+## Kurt died (`damp_control` ≈ 0x466b40): the death is counted, the level is saved as `LASTGAME`
+## and the game goes back to the main menu, whose "Continue" starts the level again.
 func _on_kurt_died() -> void:
 	GameState.level = level.number
-	get_tree().reload_current_scene()
+	GameState.deaths += 1
+	GameState.strike_used = scripts.air_strike.used_up if scripts.air_strike else false
+	GameState.save_game(GameState.LAST_GAME)
+	get_tree().change_scene_to_file("res://game/menu/main_menu.tscn")
 
 
 func _unhandled_input(event: InputEvent) -> void:
