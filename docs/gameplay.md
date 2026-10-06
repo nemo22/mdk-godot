@@ -2752,10 +2752,19 @@ Drawn on the 600×360 view after the 3D scene:
 - **Health** (0x420830): the `SC_STAT` image at the bottom right (`600 − (w + 16)`, `360 − (h + 10)`)
   with the health in its middle, in the digits of `SNIP_TXT` (8 pixels wide, 0x420bd0); the number
   blinks (16 ticks out of 32) at 20 or less, and every other frame while invulnerable.
-- **Inventory** (0x46cce4): for 60 ticks after a change (`0x574328`), or always in sniper mode, the
-  items' `PICKUPS` icons (frame = item type − 1) at `(32 + 48 × slot, 328)` with their count above
-  when above 1 (the super chain gun shows its ticks); new items fly there from the pickup's place on
-  screen. The selected slot is framed (`48 × slot + 8…+0x37`, 304–351).
+- **Inventory** (0x46cce4): always when Kurt has items, except in sniper mode, the items'
+  `PICKUPS` icons (frame = item type − 1) at `(32 + 48 × slot, 328)` with their count above when
+  above 1, at most 999; new items fly there from the pickup's place on screen. The selected slot is
+  framed (`48 × slot + 8…+0x37`, 304–351), unless it's the super chain gun.
+  - The timer `0x574328` gates the drawing, but 0x46cce4 itself sets it to 60 every frame unless
+    in sniper mode with a phase (`0x573a60` and `0x573a64` ≠ 0), where it sets 0 (0x46ccfc–0x46ce07).
+    Its other writers (60: `damp_animate`, `damp_move`, `damp_collect_pickups`, 0x46cb74, the throw
+    0x46ce78, 0x46d1e8; 0: level start 0x432630) change nothing visible. Neither the super chain
+    gun's tick-down (0x41a304) nor firing writes it.
+  - The super chain gun's slot shows its ticks: each frame its count is set to `0x5743ef` (0x46cd85),
+    so it counts down on screen while Kurt fires; at 0 the slot goes (0x46d0c0). Normal bullets have
+    no count. Sniper ammo counts are shown only by the sniper screen.
+  - Also drawn in the fall (0x4119ec).
 - **Health bar** (0x41e3c8) at the top left while `0x573c74` > 0 seconds: a bar of colour 3 (green)
   from x 0 to `health × 500 / 900`, framed in colour 4 up to `max × 500 / 900`, y 4–10. It shows
   for a second the object the chain gun hits if its maximum (`obj+0x2a2`, the last `set_health`)

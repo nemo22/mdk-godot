@@ -1,6 +1,6 @@
 ## The in-game HUD, drawn like the original (`0x41e128`) on the 600×360 view, scaled to the window:
 ## Kurt's health in the `SC_STAT` panel (bottom right, digits from `SNIP_TXT`, blinking at 20 or
-## less, 0x420830), and the inventory for 2 seconds after it changes (`PICKUPS` icons in 5 slots
+## less, 0x420830), and the inventory outside sniper mode (`PICKUPS` icons in 5 slots
 ## at the bottom left, 0x46cce4), messages (`HUDMessages`) and the health bar of the object Kurt
 ## shoots at (top left, 0x41e3c8). See `docs/gameplay.md` ("HUD").
 class_name HUD
@@ -24,8 +24,6 @@ var _digits: Texture2D
 var _digit_height := 0
 var _icons: Array[Texture2D] = []
 var _icon_hotspots: Array[Vector2i] = []
-var _inventory_ticks := 0
-var _last_inventory := ""
 var _blink := 0
 var _bar_fill := Color()
 var _bar_frame := Color()
@@ -74,13 +72,6 @@ func _physics_process(_delta: float) -> void:
 	if not kurt:
 		return
 	_blink = (_blink + 1) & 31
-	# Show the inventory for a while whenever it changes.
-	var state := str(kurt.inventory.selected) + "|" + str(kurt.inventory.slots.map(func(s: KurtInventory.Slot) -> String: return "%d:%d" % [s.item, s.count]))
-	if state != _last_inventory:
-		_last_inventory = state
-		_inventory_ticks = INVENTORY_TICKS
-	elif _inventory_ticks > 0:
-		_inventory_ticks -= 1
 	queue_redraw()
 
 
@@ -138,11 +129,18 @@ func _draw() -> void:
 	if scripts and scripts.rides and scripts.rides.bomber:
 		# The 600×360 view, centred in a wider window.
 		_bomber.draw(self, scripts.rides.bomber, messages.big_font, Vector2((view.x - HUDMessages.VIEW_WIDTH) / 2.0, 0.0))
-	if _inventory_ticks > 0:
+	if shows_inventory():
 		_draw_inventory()
 	if scripts:
 		_draw_bar(scripts.get_bar())
 	messages.draw(self, view.x)
+
+
+## Whether the inventory is drawn this frame (tests read it too): always outside sniper mode, as
+## 0x46cce4 resets its timer (`0x574328`) to 60 every frame then, so the super chain gun's ticks
+## count down on screen while Kurt fires.
+func shows_inventory() -> bool:
+	return not kurt.sniping
 
 
 func _draw_bar(bar: Vector2i) -> void:
