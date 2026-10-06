@@ -1597,7 +1597,8 @@ game returns to the menu (game over).
 ### HUD and end ✅
 
 - Each frame after the scene: messages (0x425474), the health box (`SC_STAT`, 0x420830) and the
-  inventory (`PICKUPS`, 0x46cce4), as in the level.
+  inventory (`PICKUPS`, 0x46cce4), as in the level. Outside sniper mode 0x46cce4 resets its timer
+  `0x574328` to 60 every frame, so here the inventory is always on screen.
 - At t > 33 s the fall ends (0x4114a4 returns 1): the fall files are freed (0x410b80) and the level
   loads (0x41ba68) with the health (`0x574324`) and inventory (with the pickups) as they are; the
   main loop also sets `0x574270`–`0x574278` to 1000 ❓.

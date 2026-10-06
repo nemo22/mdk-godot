@@ -7,8 +7,6 @@ class_name HUD
 extends Control
 
 const VIEW_HEIGHT := 360.0
-## The inventory stays on screen this long after a change (`0x574328`, in ticks).
-const INVENTORY_TICKS := 60
 ## The health bar: 500 pixels for 900 hit points, from y 4 to 10, filled with palette colour 3
 ## and framed (up to the maximum) with colour 4.
 const BAR_SCALE := 500.0 / 900.0

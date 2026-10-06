@@ -166,8 +166,6 @@ var _skull: Texture2D
 var _space: Texture2D
 var _moon: Texture2D
 var _earth: Texture2D
-var _inventory_ticks := 0
-var _last_inventory := ""
 var _blink := 0
 
 
@@ -947,12 +945,12 @@ func _draw_scaled(texture: Texture2D, centre: Vector2, scale: Vector2) -> void:
 
 func _update_hud(ticks: int) -> void:
 	_blink = (_blink + ticks) & 31
-	var state := str(inventory.selected) + "|" + str(inventory.slots.map(func(slot: KurtInventory.Slot) -> String: return "%d:%d" % [slot.item, slot.count]))
-	if state != _last_inventory:
-		_last_inventory = state
-		_inventory_ticks = HUD.INVENTORY_TICKS
-	else:
-		_inventory_ticks = maxi(_inventory_ticks - ticks, 0)
+
+
+## Whether the inventory is drawn (tests read it too): always, as the fall draws it every frame
+## (0x4119ec); there is no sniper mode to hide it.
+func shows_inventory() -> bool:
+	return true
 
 
 ## The HUD over the fall, as in the level: messages, the health panel and the inventory; the skull
@@ -968,7 +966,7 @@ func _draw_hud() -> void:
 		_hud.draw_texture_rect(_skull, Rect2(Vector2(width * 0.5, 180.0) - extent * 0.5, extent), false)
 	_messages.draw(_hud, width)
 	_health_box.draw(_hud, width, health, _blink)
-	if _inventory_ticks > 0:
+	if shows_inventory():
 		for i in inventory.slots.size():
 			var slot := inventory.slots[i]
 			var frame: int = slot.item - 1
