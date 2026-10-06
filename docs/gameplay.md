@@ -367,7 +367,11 @@ floor normal `0x573bfc`… = (0, 0, 1), state 807. The chain gun stops.
     within 35° of the target (else 100), rising by 200/s, falling by 500/s. The aim is the target's
     `HEAD` part if it has one, else its box.
   - Mortar: `f = h / (|vz| + h)`, `h −= f × 60 dt`, while rising `vz −= (1 − f) × 60 dt`, then
-    gravity 32 (−220 at most); fans lift it. On the arena: `0x491ef0` = the round, the triangle
+    gravity 32 (−220 at most); fans lift it. It moves as a 0.5 box (`bsp_sweep_box`, Kurt's arena
+    then the second), which faces stop only from their front: LEVEL6 OLYM_3's grunts are killed by
+    a round lobbed through the small opening in their glass wall, past the face behind it that looks
+    into their room (y = −149). The port casts a front-face ray reaching 0.5 further and puts the
+    round 0.5 off the face. On the arena: `0x491ef0` = the round, the triangle
     group's hit script (kind 1, hit type 4; `bomb_follow_path` can guide it), then
     `v −= 1.75 (v·n) n`, and it settles after 15 ticks once stopped.
   - Hits: bullets take 8 hit points (not from objects with 65000 or more), set the hit event to the

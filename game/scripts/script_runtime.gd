@@ -1209,6 +1209,8 @@ enum Doorway { MINUS_X, PLUS_X, MINUS_Y, PLUS_Y, LEFT, RIGHT, MINUS_Z, PLUS_Z }
 ## indestructible objects and walls (grey, half as fast), on groups that react to the hit
 ## (orange), and fire (explosions without a break-up model, the nuke).
 enum Spark { FLESH, HARD, GROUP, FIRE }
+## Which faces stop a ray: both sides, or only their fronts (`bsp_sweep_box`, the mortar).
+enum Faces { BOTH, FRONT }
 ## Palette colours `base, range` of each kind.
 const SPARK_COLOURS := [Vector2i(3, 3), Vector2i(0x25, -16), Vector2i(10, 3), Vector2i(0x30, 0x10)]
 const SPARK_FLESH_NO_GORE := Vector2i(13, 3)
@@ -1801,9 +1803,11 @@ func get_arena_floor(arena_name: String) -> float:
 
 
 ## Casts a ray against the level geometry (MDK coordinates). Returns the hit as by `intersect_ray`
-## (Godot coordinates), or an empty dictionary.
-func raycast(from: Vector3, to: Vector3) -> Dictionary:
+## (Godot coordinates), or an empty dictionary. With `Faces.FRONT` a face seen from its back is
+## passed, e.g. LEVEL6 OLYM_3's wall behind the opening the mortar is lobbed through.
+func raycast(from: Vector3, to: Vector3, faces := Faces.BOTH) -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(MDKMeshBuilder.to_godot(from), MDKMeshBuilder.to_godot(to), LEVEL_LAYER)
+	query.hit_back_faces = faces == Faces.BOTH
 	var space := get_world_3d().direct_space_state
 	# The 1996 demo's triangles that only stop Kurt don't stop rays.
 	var exclude: Array[RID] = level.clip_rids.duplicate()

@@ -34,6 +34,8 @@ const HOMING_PITCH_RATE := 120.0
 const MORTAR_DRAG := 60.0
 const MORTAR_GRAVITY := 32.0
 const MORTAR_BOUNCE := 1.75
+## Half the size of the box the mortar sweeps through the arena (0x491f24).
+const MORTAR_BOX := 0.5
 ## Explosions (0x4638cc): 150 damage to objects and triangle groups, 75 to Kurt, hit type −7.
 const EXPLOSION_DAMAGE := 150
 const EXPLOSION_KURT_DAMAGE := 75
@@ -288,12 +290,15 @@ func _move_mortar(round: Round, dt: float) -> void:
 		round.position = hit[1]
 		_explode(round, 50.0, hit[0])
 		return
-	var wall := runtime.raycast(start, end)
+	# Swept as the original's box: faces seen from their back don't stop it, and it stops with its
+	# side on a face (the ray reaches half the box further), e.g. resting on a floor.
+	var reach := end + (end - start).normalized() * MORTAR_BOX
+	var wall := runtime.raycast(start, reach, MDKScriptRuntime.Faces.FRONT)
 	if wall.is_empty():
 		round.position = end
 		return
 	var normal := MDKScriptRuntime.to_mdk(wall.normal)
-	round.position = MDKScriptRuntime.to_mdk(wall.position) + normal * 0.5
+	round.position = MDKScriptRuntime.to_mdk(wall.position) + normal * MORTAR_BOX
 	last_mortar = round
 	runtime.hit_group_at(wall, 0, MDKScriptRuntime.HIT_SHOT, 4)
 	if round.path:
