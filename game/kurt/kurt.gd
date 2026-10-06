@@ -76,6 +76,8 @@ const SLIDE_ACCELERATION := 35.0
 const SLIDE_BRAKE := 15.0
 const SLIDE_MIN_SPEED := 15.0
 const SLIDE_TURN := 45.0
+## The mouse turns the slide as it turns Kurt walking, at most 4 × `SLIDE_TURN`.
+const SLIDE_MOUSE_TURN := 4.0 * SLIDE_TURN
 ## He falls twice as fast as usual, and the slide ends after 20 ticks in the air.
 const SLIDE_GRAVITY := 128.0
 const SLIDE_AIR_TICKS := 20.0
@@ -975,7 +977,9 @@ func _update_slide(delta: float, on_floor: bool) -> void:
 	var mdk_yaw := rad_to_deg(yaw) + 90.0
 	if absf(slide_velocity.x) + absf(slide_velocity.y) > 0.5:
 		mdk_yaw = rad_to_deg(slide_velocity.angle())
-	mdk_yaw += Input.get_axis(&"turn_right", &"turn_left") * SLIDE_TURN * delta
+	var mouse := SLIDE_MOUSE_TURN * delta
+	mdk_yaw += Input.get_axis(&"turn_right", &"turn_left") * SLIDE_TURN * delta + clampf(_mouse_turn, -mouse, mouse)
+	_mouse_turn = 0.0
 	yaw = deg_to_rad(mdk_yaw - 90.0)
 	var speed := minf(slide_velocity.length(), _slide_cap)
 	var forward_input := Input.get_axis(&"move_back", &"move_forward")

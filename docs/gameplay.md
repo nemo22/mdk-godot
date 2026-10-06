@@ -263,7 +263,8 @@ floor normal `0x573bfc`… = (0, 0, 1), state 807. The chain gun stops.
   per axis adds `a² × dt` above 0.1, subtracts it below −0.1, and otherwise brakes by 2 u/s²
   towards 0.
 - The heading is `atan2(vy, vx)` and becomes Kurt's yaw while `|vx| + |vy| > 0.5`; turning left or
-  right turns him by 45°/s. Moving forward accelerates by 35 u/s² (above 15 u/s) and raises the cap
+  right turns him by 45°/s (left turns left, as walking); the mouse turns him as walking, its rate
+  clamped to 4 × 45°/s (`damp_control`, `0x5014d4`). Moving forward accelerates by 35 u/s² (above 15 u/s) and raises the cap
   by 10/s up to 80; braking slows by 15 u/s² down to 15 u/s and lowers the cap by 25/s down to 15;
   with no input the cap goes back to 50 at 20/s. There is no other friction.
 - Kurt moves at `(cos yaw, sin yaw) × min(speed, cap)`, and falls at twice the normal gravity
