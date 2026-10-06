@@ -975,7 +975,7 @@ func _update_slide(delta: float, on_floor: bool) -> void:
 	var mdk_yaw := rad_to_deg(yaw) + 90.0
 	if absf(slide_velocity.x) + absf(slide_velocity.y) > 0.5:
 		mdk_yaw = rad_to_deg(slide_velocity.angle())
-	mdk_yaw += Input.get_axis(&"turn_left", &"turn_right") * SLIDE_TURN * delta
+	mdk_yaw += Input.get_axis(&"turn_right", &"turn_left") * SLIDE_TURN * delta
 	yaw = deg_to_rad(mdk_yaw - 90.0)
 	var speed := minf(slide_velocity.length(), _slide_cap)
 	var forward_input := Input.get_axis(&"move_back", &"move_forward")
