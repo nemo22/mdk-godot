@@ -435,7 +435,12 @@ with the aliens, with flags 0x2008a0 and 1 health.
 
 Doors are **connectors** between an arena and a corridor, created by `spawn_connector` (opcode 149)
 in the scripts of both: the second call finds the existing door and moves it into its arena. A new
-door starts closed (state 8) with an opening distance of 20 (`object_spawn` 0x45cdec, spawn flag 1). The
+door starts closed (state 8) with an opening distance of 20 (`object_spawn` 0x45cdec, spawn flag 1).
+A door whose other side (`obj+0x302`) is Kurt's arena moves into it each frame, turned around
+(0x43ca00), and `arena_load` pulls doors in the same way: so a door lives in an arena that is drawn.
+Otherwise, once Kurt left its arena and it shut, that arena is put away and the door freezes (LEVEL7:
+back from DANT_2, the doorway to CDANT_1 showed the sky and Kurt walked through the door). Crossing
+a doorway makes the arena left the active second one before the new one loads (`game_frame`). The
 door's state (`obj+0x312`: 1 open, 2 opening, 4 closing, 8 closed; higher bits set by opcode 152:
 0x10 not solid while open, 0x20 stays open, 0x40 locked, 0x100 lock hidden) changes every frame:
 

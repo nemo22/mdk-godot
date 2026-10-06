@@ -302,8 +302,12 @@ func show_arena(arena_name: String) -> void:
 		second_arena = ""
 		second_active = false
 		return
-	if arena_name != current_arena:
+	# Loaded (`arena_load` 0x419d00): Kurt's arena, or a new second one.
+	if arena_name == current_arena:
+		_pull_doors(arena_name)
+	elif arena_name != second_arena:
 		second_arena = arena_name
+		_pull_doors(arena_name)
 	second_active = true
 	var state := get_arena_state(arena_name)
 	if not state.started:
@@ -316,7 +320,23 @@ func preload_arena(arena_name: String) -> void:
 	if arena_name.is_empty() or arena_name == "NONE" or arena_name == second_arena:
 		return
 	second_arena = arena_name
+	_pull_doors(arena_name)
 	second_active = false
+
+
+## An arena being loaded takes the doors leading to it from its neighbours (`arena_load`
+## 0x419d00), except from Kurt's arena and the active second one: e.g. loading DANT_2 from CDANT_2
+## moves the door CDANT_1 → DANT_2 into DANT_2, where Kurt will meet it.
+func _pull_doors(arena_name: String) -> void:
+	for record: Dictionary in level.get_arena_records(arena_name):
+		if record.type != Level.CONNECTION:
+			continue
+		var other := level.get_connection(arena_name, record.id)
+		if other.is_empty() or other == current_arena or (second_active and other == second_arena):
+			continue
+		for obj in objects:
+			if not obj.dead and obj.flags & MDKObject.FLAG_DOOR and obj.arena == other and obj.connects == arena_name:
+				MDKObjectBehaviors.move_door(obj)
 
 
 ## Only Kurt's arena and the active second one are drawn, with their objects (0x41e344). An
@@ -515,6 +535,7 @@ func _tick() -> void:
 		if not current_arena.is_empty():
 			second_arena = current_arena
 			kurt.enter_arena()
+		second_active = true
 		current_arena = arena_name
 		show_arena(arena_name)
 	_check_fall_out()

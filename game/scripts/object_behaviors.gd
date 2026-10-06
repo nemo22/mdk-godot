@@ -14,6 +14,9 @@ const DOOR_OPEN_NOT_SOLID := 0x10
 const DOOR_STAYS_OPEN := 0x20
 const DOOR_LOCKED := 0x40
 const DOOR_LOCK_HIDDEN := 0x100
+## A door moved to its other side turns around (0x43ca00).
+const DOOR_TURN := 180.0
+const FULL_TURN := 360.0
 
 ## Falling pickups open a chute at this speed.
 const PICKUP_CHUTE_SPEED := -15.0
@@ -47,6 +50,10 @@ func _init(p_runtime: MDKScriptRuntime) -> void:
 
 ## Opens the door when Kurt comes closer than `door_distance`, closes it when he goes away.
 func update_door(obj: MDKObject) -> void:
+	# A door seen from its other side moves into Kurt's arena (0x43cc68), so it stays live, solid
+	# and drawn there after the arena behind it is put away.
+	if obj.arena != runtime.current_arena and obj.connects == runtime.current_arena:
+		move_door(obj)
 	var state := obj.door_state
 	if state & DOOR_OPENING:
 		if obj.is_animation_done():
@@ -84,6 +91,17 @@ func update_door(obj: MDKObject) -> void:
 			obj.flags |= MDKObject.FLAG_NOT_SOLID
 		else:
 			obj.flags &= ~MDKObject.FLAG_NOT_SOLID
+
+
+## Moves a door into the arena on its other side, turned around (0x43ca00): e.g. the door
+## CDANT_1 → DANT_2 at yaw 90 becomes DANT_2 → CDANT_1 at yaw 270.
+static func move_door(door: MDKObject) -> void:
+	var arena := door.arena
+	door.arena = door.connects
+	door.connects = arena
+	door.yaw += DOOR_TURN
+	if door.yaw >= FULL_TURN:
+		door.yaw -= FULL_TURN
 
 
 ## Sets up a new door (`spawn_connector`): masks of its `LOCK` and `HC…` parts.
