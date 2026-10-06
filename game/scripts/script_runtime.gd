@@ -514,6 +514,7 @@ func _tick() -> void:
 		# Crossing into another arena: the one left stays as the active second arena.
 		if not current_arena.is_empty():
 			second_arena = current_arena
+			kurt.enter_arena()
 		current_arena = arena_name
 		show_arena(arena_name)
 	_check_fall_out()

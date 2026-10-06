@@ -79,6 +79,8 @@ const SLIDE_TURN := 45.0
 ## He falls twice as fast as usual, and the slide ends after 20 ticks in the air.
 const SLIDE_GRAVITY := 128.0
 const SLIDE_AIR_TICKS := 20.0
+## Ticks of sliding left after entering another arena (`0x573be8` = −15).
+const SLIDE_ARENA_TICKS := 15.0
 ## `BUTSLIDE` plays at 11025 Hz, or at 15000 Hz while accelerating.
 const SLIDE_PITCH := 15000.0 / 11025.0
 
@@ -289,6 +291,8 @@ var _slide_cap := SLIDE_CAP
 var _slide_normal := Vector3(0.0, 0.0, 1.0)
 var _slide_push := Vector2.ZERO
 var _slide_air := 0.0
+## Ticks left after an arena change; 0: none.
+var _slide_left := 0.0
 var sprites: MDKBni
 ## Returns a sound by name (see `Level.get_sound()`).
 var get_sound: Callable
@@ -902,11 +906,20 @@ func start_slide() -> void:
 	_slide_normal = Vector3(0.0, 0.0, 1.0)
 	_slide_push = Vector2.ZERO
 	_slide_air = 0.0
+	_slide_left = 0.0
 	firing = false
 	_gun_player.stop()
 	muzzle.visible = false
 	chute_open = false
 	_set_state(State.SLIP)
+
+
+## Kurt crossed into another arena (0x41c550): a slide ends 15 ticks later. E.g. LEVEL6's slide
+## drops him into OLYM_2 against a wall.
+func enter_arena() -> void:
+	if not sliding or _slide_left > 0.0:
+		return
+	_slide_left = SLIDE_ARENA_TICKS
 
 
 func stop_slide() -> void:
@@ -930,6 +943,17 @@ func slide_accel(push_amount: Vector2, delta: float) -> void:
 
 ## One frame of the slide (`damp_buttslide`).
 func _update_slide(delta: float, on_floor: bool) -> void:
+	# 15 ticks after an arena change he falls, without speed.
+	if _slide_left > 0.0:
+		_slide_left -= TICKS * delta
+		if _slide_left <= 0.0:
+			stop_slide()
+			velocity.x = 0.0
+			velocity.z = 0.0
+			forward_speed = 0.0
+			strafe_speed = 0.0
+			_set_state(State.FALL)
+			return
 	if on_floor:
 		var normal := MDKScriptRuntime.to_mdk(get_floor_normal())
 		_slide_normal.x = 0.8 * _slide_normal.x + 0.2 * normal.x
