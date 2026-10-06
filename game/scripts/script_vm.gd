@@ -480,11 +480,15 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			return _branch(obj, ins, obj.contact_flags & MDKObject.CONTACT_FLOOR != 0)
 		200:  # move_to_point
 			var to_point := Vector3(o[1], o[2], o[3]) - obj.mdk_position
-			if obj.flags & MDKObject.FLAG_COLLIDES:
+			# The original's step (0x459555): scaled by the per-axis sum, each axis clamped; only
+			# falling objects ignore height.
+			if obj.flags & MDKObject.FLAG_GRAVITY:
 				to_point.z = 0.0
-			if absf(to_point.x) + absf(to_point.y) + absf(to_point.z) < 0.5:
+			var distance := absf(to_point.x) + absf(to_point.y) + absf(to_point.z)
+			if distance < 0.5:
 				return _branch(obj, ins, true)
-			obj.push += to_point.normalized() * minf(o[0], to_point.length() / dt)
+			var step: Vector3 = to_point * (o[0] * dt / maxf(distance, 0.1))
+			obj.push += step.clamp(-to_point.abs(), to_point.abs()) / dt
 
 		# Paths.
 		2:  # follow_path
