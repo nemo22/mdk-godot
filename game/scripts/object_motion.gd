@@ -685,7 +685,7 @@ func _sweep(obj: MDKObject, motion: Vector3) -> Variant:
 	var c := absf(cos(deg_to_rad(obj.yaw)))
 	var s := absf(sin(deg_to_rad(obj.yaw)))
 	var size := bounds.size * obj.model_scale
-	var half := Vector3((c * size.x + s * size.y) * 0.25, (s * size.x + c * size.y) * 0.25, maxf(bounds.end.z * obj.model_scale, 0.5) * 0.5)
+	var half := Vector3((c * size.x + s * size.y) * 0.25, (s * size.x + c * size.y) * 0.25, maxf(bounds.end.z * obj.model_scale + obj.get_lift(), 0.5) * 0.5)
 	var center := bounds.get_center().rotated(Vector3.BACK, deg_to_rad(obj.yaw)) * obj.model_scale
 	center.z = half.z + (0.05 if motion.z != 0.0 else 0.5)
 	_box.size = Vector3(half.x, half.z, half.y) * 2.0

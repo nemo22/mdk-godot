@@ -279,7 +279,7 @@ func set_yaw(degrees: float) -> void:
 
 
 func update_transform() -> void:
-	position = MDKMeshBuilder.to_godot(mdk_position)
+	position = MDKMeshBuilder.to_godot(mdk_position + Vector3(0.0, 0.0, get_lift()))
 	# Model space is MDK space: yaw turns around Z (MDK) = Y (Godot), pitch raises the nose (+X
 	# towards +Z) and roll turns around the forward axis.
 	if flags & FLAG_ROLLING:
@@ -292,6 +292,12 @@ func update_transform() -> void:
 func get_rotation_basis() -> Basis:
 	return Basis(Vector3.UP, deg_to_rad(yaw)) * Basis(Vector3.BACK, deg_to_rad(pitch)) \
 			* Basis(Vector3.RIGHT, deg_to_rad(roll))
+
+
+## A rolling object rests on its origin but its model is lifted by the height offset (0x43b65c:
+## z + obj+0x5c), e.g. LEVEL6's centred boulder XBO by 5 of its 5.15 radius.
+func get_lift() -> float:
+	return height_offset if flags & FLAG_ROLLING else 0.0
 
 
 ## Starts or stops rolling (`set_rolling`, opcode 85).

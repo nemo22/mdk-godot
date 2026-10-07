@@ -1953,7 +1953,7 @@ func get_world_bounds(obj: MDKObject, bounds: Variant = null) -> AABB:
 	var box: AABB = bounds
 	var out := AABB()
 	for i in 8:
-		var corner := obj.mdk_position + (box.get_endpoint(i) * obj.model_scale).rotated(Vector3.BACK, deg_to_rad(obj.yaw))
+		var corner := obj.mdk_position + Vector3(0.0, 0.0, obj.get_lift()) + (box.get_endpoint(i) * obj.model_scale).rotated(Vector3.BACK, deg_to_rad(obj.yaw))
 		out = AABB(corner, Vector3.ZERO) if i == 0 else out.expand(corner)
 	return out
 

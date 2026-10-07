@@ -160,7 +160,9 @@ down exactly. The action runs while command 229 is on. Grunts use it to leap to 
 part of the object's matrix is saved (`obj+0x302`); from then on the object's matrix is that saved
 one times its scale, and every frame (0x4602c8) it's turned by `distance moved / (2π × radius)`
 turns (`obj+0x326`, 1 if ≤ 0) about the horizontal axis across the motion (built from two angles,
-0x46e170). The boulders of levels 4, 6 and 8 (`XCBOMB`, `XBO`).
+0x46e170). The boulders of levels 4, 6 and 8 (`XCBOMB`, `XBO`). A rolling object is drawn at z +
+the height offset (`obj+0x5c`, 0x43b65c) and its world bounds follow: LEVEL6's `XBO` rests on its
+centred origin and is lifted by 5 of its 5.15 radius (`MDKObject.get_lift`).
 
 Walking and flying (43, 78, 197) go through a **waypoint** (`obj+0x12c`): the object heads for the
 waypoint, then the destination (`obj+0x120`).
