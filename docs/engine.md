@@ -910,7 +910,9 @@ every update (+0x44), velocity in units per tick (+0x18a), life in ticks (+0x196
 - **Movement** (0x4061d8, drops and debris): `pos += v × ticks` with a collision sweep (0x407e2c);
   without a hit `vz −= ticks × 0.284444 × 0.25` (about 64 units/s²); a hit puts the effect at the
   contact, `v −= 1.4 (v·n) n` (bounce with restitution 0.4) and takes 20 ticks of life. Fans push
-  them (`updraft_query` with mask 8). At life ≤ 0 they're deleted.
+  them (`updraft_query` with mask 8), after a bounce too. At life ≤ 0 they're deleted. A segment
+  starting on a plane crosses nothing (0x421470), so a piece resting on a surface leaves through
+  it: the fans' sparks, born 0.25 below the grate, rise through it (`tests/fan_spark_test.gd`).
 - **Wounds** (`attach_effect name, slot, towards`, 128, 0x4067b8, only with the effects detail
   `0x5742dc` on): an `SL_BIG` sprite (scale 10: 2.5 units, speed 0.5: 15 fps, life `2F − 1`) kept in
   `obj+0x160[slot]` at the object's reference point `slot`. Every frame (0x40690c) it loops; each

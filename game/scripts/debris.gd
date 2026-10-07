@@ -17,6 +17,8 @@ const GRAVITY := 0.284444 * 0.25
 const BOUNCE := 1.4
 ## Life lost at each bounce, in ticks.
 const BOUNCE_TICKS := 20
+## A hit this close to the start is the surface the piece rests on.
+const ON_SURFACE := 1e-3
 ## Most pieces alive at once (the original shares a pool of effects).
 const MAX_PIECES := 600
 ## A spark's tetrahedron (0x404b00), jittered by ±0.33 and scaled by its size.
@@ -228,19 +230,24 @@ func update(ticks: float) -> void:
 		var query := PhysicsRayQueryParameters3D.create(MDKMeshBuilder.to_godot(piece.center),
 				MDKMeshBuilder.to_godot(piece.center + motion), MDKScriptRuntime.LEVEL_LAYER)
 		var hit := space.intersect_ray(query) if motion != Vector3.ZERO else {}
+		# A segment starting on a plane crosses nothing (0x421470): a piece resting on the fan's
+		# grate goes on through it.
+		if not hit.is_empty() and MDKScriptRuntime.to_mdk(hit.position).distance_to(piece.center) <= ON_SURFACE:
+			hit = {}
 		if hit.is_empty():
 			piece.center += motion
 			piece.velocity.z -= GRAVITY * ticks
-			# Fans push sparks and pieces (mask 8): their speed is in units per tick.
-			if updraft.is_valid():
-				var vz: float = updraft.call(piece.arena, piece.center, piece.velocity.z * TICKS, ticks / TICKS)
-				if not is_nan(vz):
-					piece.velocity.z = vz / TICKS
 		else:
 			piece.center = MDKScriptRuntime.to_mdk(hit.position)
 			var normal := MDKScriptRuntime.to_mdk(hit.normal)
 			piece.velocity -= normal * piece.velocity.dot(normal) * BOUNCE
 			piece.ticks -= BOUNCE_TICKS
+
+		# Fans push sparks and pieces (mask 8), after a bounce too: their speed is in units per tick.
+		if updraft.is_valid():
+			var vz: float = updraft.call(piece.arena, piece.center, piece.velocity.z * TICKS, ticks / TICKS)
+			if not is_nan(vz):
+				piece.velocity.z = vz / TICKS
 		piece.ticks -= roundi(ticks)
 		if piece.ticks <= 0:
 			_pieces.remove_at(i)
