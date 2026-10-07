@@ -31,6 +31,8 @@ static var _positions_cache := {}
 ## bits 20 (v0–v1), 21 (v1–v2) and 22 (v2–v0) pick.
 const OUTLINE := 1 << 23
 const OUTLINE_EDGES := [[1 << 20, 0, 1], [1 << 21, 1, 2], [1 << 22, 2, 0]]
+## Normals at most ~2.5° apart: one flat surface.
+const COPLANAR_COS := 0.999
 
 
 ## Resolves MDK material references (texture names, palette colors) to Godot materials.
@@ -214,24 +216,30 @@ static func build_arena_mesh(arena: MDKArena, resolver: MaterialResolver, triang
 		arrays[Mesh.ARRAY_TEX_UV] = uvs
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, material)
-		_add_outlines(mesh, arena, surface_triangles, material)
+		_add_outlines(mesh, arena, surface_triangles, material, resolver.look)
 	return mesh
 
 
 ## The outlined edges of untextured triangles (glass panes get coloured frames), as lines in the
 ## triangles' material.
-static func _add_outlines(mesh: ArrayMesh, arena: MDKArena, triangles: PackedInt32Array, material: Material) -> void:
+## The enhanced look skips flagged edges two coplanar triangles share: the editor flagged some
+## diagonals inside glass panes (LEVEL7's DANT_7 columns); the original draws them (0x40b7f0).
+static func _add_outlines(mesh: ArrayMesh, arena: MDKArena, triangles: PackedInt32Array, material: Material, look: Look) -> void:
 	if material.has_meta(&"uv_scale"):
 		return
+	var inner := _inner_edges(arena, triangles) if look == Look.ENHANCED else {}
 	var lines := PackedVector3Array()
 	for tri in triangles:
 		var flags := arena.triangle_flags[tri]
 		if not flags & OUTLINE:
 			continue
 		for edge: Array in OUTLINE_EDGES:
-			if flags & edge[0]:
-				lines.push_back(to_godot(arena.vertices[arena.triangle_indices[tri * 3 + edge[1]]]))
-				lines.push_back(to_godot(arena.vertices[arena.triangle_indices[tri * 3 + edge[2]]]))
+			var a := arena.triangle_indices[tri * 3 + edge[1]]
+			var b := arena.triangle_indices[tri * 3 + edge[2]]
+			if not flags & edge[0] or inner.has(Vector2i(mini(a, b), maxi(a, b))):
+				continue
+			lines.push_back(to_godot(arena.vertices[a]))
+			lines.push_back(to_godot(arena.vertices[b]))
 	if lines.is_empty():
 		return
 	var arrays := []
@@ -239,6 +247,30 @@ static func _add_outlines(mesh: ArrayMesh, arena: MDKArena, triangles: PackedInt
 	arrays[Mesh.ARRAY_VERTEX] = lines
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
 	mesh.surface_set_material(mesh.get_surface_count() - 1, material)
+
+
+## The edges (vertex index pairs, lower first) two coplanar triangles share.
+##
+##   v2 ┌──┐ v3     v1-v2 is inner: both halves lie in one plane
+##      │╲ │
+##   v0 └──┘ v1
+static func _inner_edges(arena: MDKArena, triangles: PackedInt32Array) -> Dictionary:
+	var normals := {}
+	var inner := {}
+	for tri in triangles:
+		var v0 := arena.vertices[arena.triangle_indices[tri * 3]]
+		var normal := (arena.vertices[arena.triangle_indices[tri * 3 + 1]] - v0).cross(
+				arena.vertices[arena.triangle_indices[tri * 3 + 2]] - v0).normalized()
+		for edge: Array in OUTLINE_EDGES:
+			var a := arena.triangle_indices[tri * 3 + edge[1]]
+			var b := arena.triangle_indices[tri * 3 + edge[2]]
+			var key := Vector2i(mini(a, b), maxi(a, b))
+			if not normals.has(key):
+				normals[key] = normal
+				continue
+			if absf((normals[key] as Vector3).dot(normal)) > COPLANAR_COS:
+				inner[key] = true
+	return inner
 
 
 ## Builds the mesh of a model in a given pose (the vertices of each part, see `MDKModel.get_rest_pose()`

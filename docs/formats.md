@@ -298,6 +298,10 @@ along edges selected by bit 20 (v0–v1), bit 21 (v1–v2), bit 22 (v0–v2). Li
 triangle's material: palette colour if −255..−1, else the material itself (glass → the glass
 ARGB, alpha blended, gouraud). Bit 23 is set on ~all glass triangles, so glass panes get
 translucent coloured frames. (formats.md currently calls bits 20–22 a light level ❓ — wrong.)
+Some panes also flag their inner diagonals (LEVEL7's DANT_7 columns: fan triangles with a quad
+half's edge flags), so thin lines cross them. The port's enhanced look skips flagged edges two
+coplanar triangles share (`MDKMeshBuilder._inner_edges`, `tests/glass_outline_test.gd`); the
+original look draws them all, as the original.
 
 ### RIPPLE (1028)
 
