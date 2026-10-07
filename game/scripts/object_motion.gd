@@ -711,9 +711,11 @@ func _sweep(obj: MDKObject, motion: Vector3) -> Variant:
 		# An overlap the motion leaves sideways doesn't stop it: the BSP sweep stops crossings into a
 		# face's front only (LEVEL6's boulder half through OLYM_6's hidden diagonal wall). A fall
 		# still lands (LEVEL7's SW_H150 in a slope).
-		var out := MDKScriptRuntime.to_mdk(_motion_result.get_collision_normal())
-		if hit and Vector2(remaining.x, remaining.y).dot(Vector2(out.x, out.y)) > 0.0:
-			hit = false
+		# Without a hit the result has no collision to read.
+		if hit:
+			var out := MDKScriptRuntime.to_mdk(_motion_result.get_collision_normal())
+			if Vector2(remaining.x, remaining.y).dot(Vector2(out.x, out.y)) > 0.0:
+				hit = false
 		if not hit:
 			obj.mdk_position += remaining
 			break
