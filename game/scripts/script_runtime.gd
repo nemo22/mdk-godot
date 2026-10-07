@@ -148,6 +148,8 @@ var second_active := false
 ## The arenas loaded (Kurt's and the second) and drawn (Kurt's and the active second) last tick.
 var _loaded_arenas: Array[String] = []
 var _drawn_arenas: Array[String] = []
+## The one arena (not corridor) loaded (`_g_current_arena`); its corridors are loaded too.
+var _resident_arena := ""
 var objects: Array[MDKObject] = []
 
 var _arenas := {}
@@ -272,16 +274,51 @@ func is_sound_playing(sound_name: String) -> bool:
 func teleport_kurt(arena_name: String, mdk_position: Vector3, yaw: float) -> void:
 	if not arena_name.is_empty():
 		level.enter_arena(arena_name)
-		# A teleport leaves no second arena (0x41bce4).
-		second_arena = ""
-		second_active = false
+		var from := current_arena
 		current_arena = arena_name
+		_teleport_second(arena_name, from)
 		show_arena(arena_name)
 		# No move crosses a connection (0x41bce4 sets 0x5739cc too).
 		_previous_kurt_position = mdk_position
 	kurt.teleport(MDKMeshBuilder.to_godot(mdk_position), deg_to_rad(yaw - 90.0))
 	if arena_name.is_empty():
 		kurt.white_flash = maxf(kurt.white_flash, 255.0)
+
+
+## The second arena after a teleport (0x41bce4): none into an arena; into a corridor not loaded,
+## the last arena (DTI order) leading to it (CDANT_1 → DANT_2), loaded ahead; into a loaded one (of
+## the loaded arena, or Kurt's pair), unchanged. Kurt's show then activates it.
+func _teleport_second(arena_name: String, from: String) -> void:
+	if level.mto.arena_offsets.has(arena_name):
+		second_arena = ""
+		second_active = false
+		return
+	if _is_corridor_loaded(arena_name, from):
+		return
+	var neighbour := ""
+	for entry in level.dti.arenas:
+		if level.mto.arena_offsets.has(entry.name) and _connects_to(entry.name, arena_name):
+			neighbour = entry.name
+	second_arena = neighbour
+	second_active = false
+	if not neighbour.is_empty():
+		_load_arena(neighbour)
+
+
+## Corridors connected to the loaded arena are loaded with it (0x419ac0); so are the arena Kurt was
+## in and the second.
+func _is_corridor_loaded(corridor: String, from: String) -> bool:
+	if corridor == second_arena or corridor == from:
+		return true
+	return _connects_to(_resident_arena, corridor)
+
+
+## Whether an arena has a connection record to another.
+func _connects_to(arena_name: String, other: String) -> bool:
+	for record: Dictionary in level.get_arena_records(arena_name):
+		if record.type == Level.CONNECTION and level.get_connection(arena_name, record.id) == other:
+			return true
+	return false
 
 
 ## The triangle groups of his arena that Kurt ran into this tick get a hit (0x46634e): with hit
@@ -308,10 +345,10 @@ func show_arena(arena_name: String) -> void:
 		return
 	# Loaded (`arena_load` 0x419d00): Kurt's arena, or a new second one.
 	if arena_name == current_arena:
-		_pull_doors(arena_name)
+		_load_arena(arena_name)
 	elif arena_name != second_arena:
 		second_arena = arena_name
-		_pull_doors(arena_name)
+		_load_arena(arena_name)
 	second_active = true
 	var state := get_arena_state(arena_name)
 	if not state.started:
@@ -324,8 +361,15 @@ func preload_arena(arena_name: String) -> void:
 	if arena_name.is_empty() or arena_name == "NONE" or arena_name == second_arena:
 		return
 	second_arena = arena_name
-	_pull_doors(arena_name)
+	_load_arena(arena_name)
 	second_active = false
+
+
+## Loads an arena (`arena_load` 0x419d00): only one arena (not corridor) is loaded at a time.
+func _load_arena(arena_name: String) -> void:
+	if level.mto.arena_offsets.has(arena_name):
+		_resident_arena = arena_name
+	_pull_doors(arena_name)
 
 
 ## An arena being loaded takes the doors leading to it from its neighbours (`arena_load`

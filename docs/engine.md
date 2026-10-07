@@ -430,7 +430,9 @@ deactivation (end of frame).
 
 `MDKScriptRuntime` keeps `second_arena` / `second_active`: `show_arena()` (`BSPShow`: opcode 100,
 doors starting to open, crossing into another arena, trigger records of type 1, the start and
-teleports) and `preload_arena()` (opcode 223, type 3); a door that ends closing clears it. The
+teleports) and `preload_arena()` (opcode 223, type 3); a door that ends closing clears it. A
+teleport clears it only into an arena; into a corridor not loaded it loads the last arena (DTI
+order) connected to it, as in the table above (`_teleport_second`, `tests/door_arena_test.gd`). The
 objects and the script of the active second arena run, and its DTI aliens appear when it's first
 shown (so behind a door as it opens). Only Kurt's arena and the active second one are drawn, with
 their objects; an arena in neither slot any more stops its objects' loop sounds, which start again
