@@ -625,6 +625,11 @@ script frame (`0xFF`) clears it too.
 digit at the given length take hits separately, with their own hit points (`obj+0x30e[part]`, max
 `obj+0x31e[part]`). When a weak part's hit points reach 0 the hit event is that part (index + 1).
 Parts with at most 900 hit points drive the boss health bar.
+Example: level 8's start ship `XBSHIP` (`GUNT_1`, health 65000) has 7 blue turrets `T1`–`T7` (60
+hit points). Its script blows a turret off on any hit event of it, so one sniper round does (the
+chain gun only at 0 hit points, and from the floor the turrets are beyond its reach); with all 7
+gone the ship falls, rolling, and explodes. Sniper rounds test the parts' faces, so the hull's box
+doesn't hide the turrets ✅.
 
 ### Death
 

@@ -2,7 +2,7 @@
 ## `docs/gameplay.md` ("Sniper mode").
 ##
 ## A round starts at the eye along the view (yaw = Kurt's, pitch = the view's) and is tested every
-## tick along the segment it moved: objects (their boxes, then their parts), then the arena.
+## tick along the segment it moved: objects (their boxes, then their parts' faces), then the arena.
 ## - Type 0, bullet: 1100 units/s for 75 ticks; 8 damage.
 ## - Type 1 (`SW_HOME`), homing bullet: 400 units/s for 240 ticks, steering at the locked object.
 ## - Type 2 (`SW_SGREN`), grenade: like the bullet, but it explodes.
@@ -342,16 +342,11 @@ func _test_objects(start: Vector3, end: Vector3) -> Array:
 		var part := -1
 		var point: Variant = null
 		if obj.model:
-			var parts := obj.get_part_bounds()
-			for i in parts.size():
-				if obj.hidden_parts & (1 << i):
-					continue
-				var part_point: Variant = runtime.get_world_bounds(obj, parts[i]).intersects_segment(start, end)
-				if part_point != null and (point == null or start.distance_to(part_point) < start.distance_to(point)):
-					point = part_point
-					part = i
-			if point == null:
+			var face := _hit_part(obj, start, end)
+			if face.is_empty():
 				continue
+			point = face[0]
+			part = face[1]
 		else:
 			point = bounds.intersects_segment(start, end)
 		var distance := start.distance_to(point)
@@ -359,6 +354,59 @@ func _test_objects(start: Vector3, end: Vector3) -> Array:
 			best_distance = distance
 			best = [obj, point, part]
 	return best
+
+
+## The nearest face of a visible part the segment crosses (0x414668): `[point, part]`, or empty.
+## The segment in model space against the pose's triangles, from either side. Faces, not part
+## boxes: LEVEL8's XBSHIP hull box holds its turrets.
+func _hit_part(obj: MDKObject, start: Vector3, end: Vector3) -> Array:
+	if obj.model_scale == 0.0:
+		return []
+	# Model space is MDK space; the node's transform is Godot space. An affine map keeps the
+	# fraction along the segment.
+	var to_model := obj.transform.affine_inverse()
+	var from := MDKScriptRuntime.to_mdk(to_model * MDKMeshBuilder.to_godot(start))
+	var to := MDKScriptRuntime.to_mdk(to_model * MDKMeshBuilder.to_godot(end))
+	var nearest := 1.0
+	var part := -1
+	var pose := obj.get_pose()
+	for i in pose.size():
+		if obj.hidden_parts & (1 << i):
+			continue
+		var vertices: PackedVector3Array = pose[i]
+		var indices := obj.model.parts[i].triangle_indices
+		for t in range(0, indices.size(), 3):
+			var hit := _segment_face(from, to, vertices[indices[t]], vertices[indices[t + 1]], vertices[indices[t + 2]])
+			if hit < nearest:
+				nearest = hit
+				part = i
+	if part < 0:
+		return []
+	return [start.lerp(end, nearest), part]
+
+
+## Where the segment crosses the triangle, as a fraction of it (0x4144c0, either side); INF when
+## it doesn't (Moller-Trumbore).
+static func _segment_face(from: Vector3, to: Vector3, a: Vector3, b: Vector3, c: Vector3) -> float:
+	const PARALLEL := 1e-9
+	var along := to - from
+	var ab := b - a
+	var ac := c - a
+	var p := along.cross(ac)
+	var det := ab.dot(p)
+	if absf(det) < PARALLEL:
+		return INF
+	var inverse := 1.0 / det
+	var s := from - a
+	var u := s.dot(p) * inverse
+	if u < 0.0 or u > 1.0:
+		return INF
+	var q := s.cross(ab)
+	var v := along.dot(q) * inverse
+	if v < 0.0 or u + v > 1.0:
+		return INF
+	var t := ac.dot(q) * inverse
+	return t if t >= 0.0 and t <= 1.0 else INF
 
 
 ## A round hits an object (0x462708): grenades and the mortar explode; bullets take 8 hit points
