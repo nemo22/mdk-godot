@@ -24,6 +24,9 @@ const SKY_BLACK := 1
 ## are also on Kurt's layer (`damp_collide_move` 0x465e34).
 const RAY_LAYER := 1
 const KURT_LAYER := 8
+## Objects sweep through their arena's faces from the front only (BSP, 0x45fec4), e.g. LEVEL6's
+## boulders pass the back of OLYM_6's hidden wall at y = 2772.
+const OBJECT_LAYER := 16
 
 
 ## The triangles of an arena that share a group number (the top byte of their flags), which scripts
@@ -32,6 +35,8 @@ class TriangleGroup:
 	var triangles := PackedInt32Array()
 	var mesh: MeshInstance3D
 	var shape: CollisionShape3D
+	## The same faces, one-sided, on `OBJECT_LAYER`.
+	var front_shape: CollisionShape3D
 	## `TRIANGLE_HIDDEN` and `TRIANGLE_NOT_SOLID`.
 	var flags := 0
 	## The material every triangle got from `group_set_texture`, if any.
@@ -192,6 +197,15 @@ func _build_group(arena: MDKArena, root: Node3D, group_number: int, group: Trian
 	body.add_child(group.shape)
 	root.add_child(body)
 
+	# Objects' one-sided copy.
+	var front := StaticBody3D.new()
+	front.name = "Front" + suffix
+	front.collision_layer = OBJECT_LAYER
+	group.front_shape = CollisionShape3D.new()
+	group.front_shape.shape = MDKMeshBuilder.build_arena_collision(arena, group.triangles, MDKMeshBuilder.Sides.FRONT)
+	front.add_child(group.front_shape)
+	root.add_child(front)
+
 
 ## The 1996 demo's triangles with flag 2 (`MDKBeta.get_clip_triangles`): not drawn, and skipped
 ## by its triangle tests: they stop Kurt and what he feels his way with (walls ahead, ledges, the
@@ -200,7 +214,7 @@ func _build_clip(arena: MDKArena, root: Node3D, triangles: PackedInt32Array) -> 
 	var body := StaticBody3D.new()
 	body.name = "Clip"
 	body.set_meta(&"arena", arena.name)
-	body.collision_layer = RAY_LAYER | KURT_LAYER
+	body.collision_layer = RAY_LAYER | KURT_LAYER | OBJECT_LAYER
 	var shape := CollisionShape3D.new()
 	shape.shape = MDKMeshBuilder.build_arena_collision(arena, triangles)
 	body.add_child(shape)
@@ -230,6 +244,7 @@ func set_group_state(arena_name: String, group_number: int, op: int) -> void:
 			group.flags &= ~(TRIANGLE_HIDDEN | TRIANGLE_NOT_SOLID)
 	group.mesh.visible = not group.flags & TRIANGLE_HIDDEN
 	group.shape.set_deferred(&"disabled", group.flags & TRIANGLE_NOT_SOLID != 0)
+	group.front_shape.set_deferred(&"disabled", group.flags & TRIANGLE_NOT_SOLID != 0)
 
 
 ## Centres of the triangles of a group (MDK coordinates), for blasts (0x463a94). Empty when the
@@ -336,6 +351,7 @@ func restore_groups(data: Dictionary) -> void:
 			group.flags = entry[0]
 			group.mesh.visible = not group.flags & TRIANGLE_HIDDEN
 			group.shape.set_deferred(&"disabled", group.flags & TRIANGLE_NOT_SOLID != 0)
+			group.front_shape.set_deferred(&"disabled", group.flags & TRIANGLE_NOT_SOLID != 0)
 
 
 ## Returns the group of the arena floor below `position` (Godot coordinates), or 0.
@@ -395,6 +411,7 @@ func get_other_bodies(arena_name: String) -> Array[RID]:
 			continue
 		for group: TriangleGroup in arena_groups[other].values():
 			bodies.push_back((group.shape.get_parent() as StaticBody3D).get_rid())
+			bodies.push_back((group.front_shape.get_parent() as StaticBody3D).get_rid())
 		if _clip_bodies.has(other):
 			bodies.push_back(_clip_bodies[other].get_rid())
 	_other_bodies[arena_name] = bodies
@@ -406,10 +423,11 @@ func set_solid_arenas(arena_names: Array[String]) -> void:
 	solid_arenas = arena_names
 	for arena_name: String in arena_groups:
 		var layer := RAY_LAYER | (KURT_LAYER if arena_name in arena_names else 0)
+		var clip_layer := layer | OBJECT_LAYER
 		for group: TriangleGroup in arena_groups[arena_name].values():
 			(group.shape.get_parent() as StaticBody3D).collision_layer = layer
 		if _clip_bodies.has(arena_name):
-			_clip_bodies[arena_name].collision_layer = layer
+			_clip_bodies[arena_name].collision_layer = clip_layer
 
 
 ## The enhanced look: a sun with shadows, white light all around, ambient occlusion, glow on

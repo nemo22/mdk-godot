@@ -9,6 +9,8 @@ const PALETTE_LIT_DOUBLE_SIDED_SHADER := preload("res://mdk/shaders/palette_lit_
 
 ## The original look (unlit, nearest texels) or the enhanced one (lit, filtered).
 enum Look { ORIGINAL, ENHANCED }
+## Which sides of a face stop what collides with it.
+enum Sides { BOTH, FRONT }
 
 ## Special material values (palette "colors" ≥ 256, named in the level's MTI archive).
 const SPECIAL_NONE := 256  # Invisible.
@@ -283,7 +285,7 @@ static func build_model_mesh(model: MDKModel, pose: Array, resolver: MaterialRes
 
 
 ## Builds the collision shape of an arena (every triangle, including invisible ones).
-static func build_arena_collision(arena: MDKArena, triangles := PackedInt32Array()) -> ConcavePolygonShape3D:
+static func build_arena_collision(arena: MDKArena, triangles := PackedInt32Array(), sides := Sides.BOTH) -> ConcavePolygonShape3D:
 	if triangles.is_empty():
 		triangles = PackedInt32Array(range(arena.triangle_materials.size()))
 	var faces := PackedVector3Array()
@@ -292,7 +294,7 @@ static func build_arena_collision(arena: MDKArena, triangles := PackedInt32Array
 		for k in 3:
 			faces[t * 3 + k] = to_godot(arena.vertices[arena.triangle_indices[triangles[t] * 3 + k]])
 	var shape := ConcavePolygonShape3D.new()
-	shape.backface_collision = true
+	shape.backface_collision = sides == Sides.BOTH
 	shape.set_faces(faces)
 	return shape
 

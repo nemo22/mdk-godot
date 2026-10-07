@@ -705,6 +705,13 @@ func _sweep(obj: MDKObject, motion: Vector3) -> Variant:
 		_motion_parameters.from = Transform3D(Basis(), MDKMeshBuilder.to_godot(obj.mdk_position + center))
 		_motion_parameters.motion = MDKMeshBuilder.to_godot(remaining)
 		var hit := PhysicsServer3D.body_test_motion(_probe, _motion_parameters, _motion_result)
+
+		# An overlap the motion leaves sideways doesn't stop it: the BSP sweep stops crossings into a
+		# face's front only (LEVEL6's boulder half through OLYM_6's hidden diagonal wall). A fall
+		# still lands (LEVEL7's SW_H150 in a slope).
+		var out := MDKScriptRuntime.to_mdk(_motion_result.get_collision_normal())
+		if hit and Vector2(remaining.x, remaining.y).dot(Vector2(out.x, out.y)) > 0.0:
+			hit = false
 		if not hit:
 			obj.mdk_position += remaining
 			break
@@ -732,7 +739,7 @@ func _create_probe() -> void:
 	PhysicsServer3D.body_set_mode(_probe, PhysicsServer3D.BODY_MODE_KINEMATIC)
 	PhysicsServer3D.body_add_shape(_probe, _box.get_rid())
 	PhysicsServer3D.body_set_collision_layer(_probe, 0)
-	PhysicsServer3D.body_set_collision_mask(_probe, 1)
+	PhysicsServer3D.body_set_collision_mask(_probe, Level.OBJECT_LAYER)
 	PhysicsServer3D.body_set_space(_probe, runtime.get_world_3d().space)
 	_motion_parameters.margin = 0.01
 	_motion_parameters.recovery_as_collision = true
