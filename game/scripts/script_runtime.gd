@@ -24,6 +24,10 @@ const FLAG_SECOND_TOWN_FLATTENED := 1 << 29
 ## Collision layer of the level geometry (objects are on layer 2, see `MDKObject.update_body()`, and
 ## Kurt on layer 3).
 const LEVEL_LAYER := 1
+## Object flag: a platform Kurt can stand on and is carried by (`damp_platform_floor`).
+const FLAG_PLATFORM := 0x100
+## `damp_platform_floor` looks for a platform this far above and below Kurt's feet.
+const PLATFORM_REACH := 3.0
 ## Kurt dies this far below his arena's lowest point (`damp_gravity` 0x469efc).
 const KURT_FALL_OUT_DEPTH := 50.0
 
@@ -574,14 +578,21 @@ func _tick() -> void:
 		end_level.update(1.0)
 	_update_sniper_target()
 	# Only the objects of Kurt's arena and of the active second arena are updated (0x43c7dc).
+	var platform := _kurt_carrier()
 	for obj in objects.duplicate():
 		if obj.dead or not is_live_arena(obj.arena):
 			continue
 		if obj.flags & MDKObject.FLAG_DOOR:
 			behaviors.update_door(obj)
+		var from: Transform3D = obj.global_transform
+		var from_yaw: float = obj.yaw
 		vm.run(obj)
 		if not obj.dead:
 			motion.update(obj)
+
+		# Kurt moves and turns with the platform he stands on (e.g. LEVEL6's lift drops 25 a tick).
+		if obj == platform and not obj.dead:
+			_carry_kurt(obj, from, obj.yaw - from_yaw)
 
 
 ## `special_event` (opcode 131, 0x4456d2): cutscenes (events above 50, 0x477cf4) or the end of the
@@ -1765,6 +1776,45 @@ func get_kurt_platform() -> MDKObject:
 		if body and collision.get_normal().y > 0.7 and body.get_parent() is MDKObject:
 			return body.get_parent()
 	return null
+
+
+## The platform carrying Kurt (`damp_platform_floor` 0x41d2c4): not going up, the highest top of a
+## visible part of a platform (flag 0x100 or standable) that a ray from 3 above his feet to 3 below
+## meets. Not `is_on_floor()`: Godot's floor snap misses some ticks of a fast lift. Rides move him
+## themselves.
+func _kurt_carrier() -> MDKObject:
+	if kurt.ride.is_valid() or kurt.velocity.y > 0.0:
+		return null
+
+	var feet := to_mdk(kurt.global_position)
+	var best: MDKObject = null
+	var best_top := -INF
+	for obj in objects:
+		if obj.dead or not is_live_arena(obj.arena) or obj.flags & MDKObject.FLAG_NOT_SOLID:
+			continue
+		if not obj.flags & (FLAG_PLATFORM | MDKObject.FLAG_STANDABLE):
+			continue
+		var part_bounds := obj.get_part_bounds()
+		for i in part_bounds.size():
+			if obj.hidden_parts & (1 << i):
+				continue
+			var box := get_world_bounds(obj, part_bounds[i])
+			var top := box.end.z
+			if top <= best_top or absf(top - feet.z) > PLATFORM_REACH:
+				continue
+			if feet.x < box.position.x or feet.x > box.end.x or feet.y < box.position.y or feet.y > box.end.y:
+				continue
+			best = obj
+			best_top = top
+	return best
+
+
+## Kurt's platform moved from `from` to its transform now and turned by `turn` degrees (yaw): he
+## keeps his place on it and turns with it. The whole transform, as Godot's box is pitched and
+## rolled too (the lift tilts down its slope).
+func _carry_kurt(platform: MDKObject, from: Transform3D, turn: float) -> void:
+	kurt.global_position = platform.global_transform * (from.affine_inverse() * kurt.global_position)
+	kurt.yaw += deg_to_rad(turn)
 
 
 ## Contact damage of an object (`touch_damage` 0x45cf60): `targets` 1 hurts Kurt once for each

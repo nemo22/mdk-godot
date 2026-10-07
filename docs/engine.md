@@ -582,6 +582,11 @@ flag 0x10 nor 0x800: first their whole bounds (`obj+0x198`), then each visible m
 (`obj+0x2c8`) and the `LOCK` parts of doors. Objects with flag 0x100 are platforms: Kurt can stand
 on them (`0x573b84`) and they carry him when they move or turn.
 
+- The port (`MDKScriptRuntime._kurt_carrier`, `_carry_kurt`): each tick, the platform under Kurt
+  (a ray from 3 above his feet to 3 below) carries him by its move and turn, Godot's own platform
+  velocity off. Touching a body doesn't count as inside it (`Kurt._update_inside_bodies`), else he
+  fell through the lift. Test `tests/platform_carry_test.gd` (LEVEL6's lift, 25 units a tick).
+
 ### Hits
 
 When something hits an object it sets the object's hit event (`obj+0x21e`: part index + 1, −1 for

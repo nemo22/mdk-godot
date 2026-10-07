@@ -12,6 +12,7 @@ collision_layer = 4
 collision_mask = 10
 floor_max_angle = 0.7227
 floor_snap_length = 0.6
+platform_floor_layers = 0
 safe_margin = 0.01
 script = ExtResource("1_kurt")
 

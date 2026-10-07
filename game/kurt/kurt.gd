@@ -170,6 +170,8 @@ const KNOCKDOWN_FLOOR_DISTANCE := 13.0
 const KNOCKDOWN_SLAM_SPEED := -64.0
 ## A push (`push_kurt`, `0x573c08`) slows down by 0.1 u/tick per tick.
 const PUSH_DRAIN := 0.1 * TICKS * TICKS
+## Kurt is inside an object's body when he overlaps it by more than this.
+const INSIDE_DEPTH := 0.05
 
 ## Muzzle flash (`K_MUZZF`) offsets in the states that don't show the chain gun firing by
 ## themselves (`damp_animate`): a random offset of 0–4 pixels is added. `SHOT` and `RUN_FIRE` have
@@ -306,6 +308,8 @@ var _climb_ticks := 0
 ## Object bodies Kurt is inside of (an object moved into him): he doesn't collide with them until
 ## he's out, like the original's box sweeps, instead of being pushed out (maybe through the floor).
 var _inside_bodies: Array[RID] = []
+## Kurt's shape shrunk by `INSIDE_DEPTH`, to find the bodies he's inside.
+var _inside_shape: CapsuleShape3D
 var _jump_ticks_left := 0
 var _jump_released := true
 ## The original alternates two pairs of footstep sounds (`damp_animate`), `FOOT3`/`FOOT4` first.
@@ -661,8 +665,14 @@ func _update_climb(delta: float) -> void:
 
 
 func _update_inside_bodies() -> void:
+	# Touching isn't inside: resting on a moving platform, he'd fall through it.
+	if not _inside_shape:
+		var capsule := _shape.shape as CapsuleShape3D
+		_inside_shape = CapsuleShape3D.new()
+		_inside_shape.radius = capsule.radius - INSIDE_DEPTH
+		_inside_shape.height = capsule.height - INSIDE_DEPTH * 2.0
 	var query := PhysicsShapeQueryParameters3D.new()
-	query.shape = _shape.shape
+	query.shape = _inside_shape
 	query.transform = _shape.global_transform
 	query.collision_mask = 2
 	var inside: Array[RID] = []
