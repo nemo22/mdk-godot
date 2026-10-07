@@ -95,7 +95,9 @@ Done (first pass):
   palette and colour materials (`MDKMeshBuilder.Look`), one sun with shadows (`Level._enhance`,
   the same direction in every level), white ambient light so shaded faces keep about the
   texture's brightness.
-- **Post-processing**: SSAO, a little glow, a light haze in the colour of the sky's horizon.
+- **Post-processing**: SSAO, glow only above the HDR threshold (no bloom: it lifted the blacks), a
+  light haze (0.0002 per unit; 0.0007 veiled whole rooms) in the colour of the sky's horizon
+  (`tests/enhanced_haze_test.gd`).
 - **Sky, sprites and screens**: the sky is filtered the same way (`sky.gdshader` `filtered`),
   Kurt's and the muzzle's sprites too (alpha-scissored edges, `sprite.gdshader`), and the HUD,
   menus and other 2D screens sample their images linearly (`Settings.canvas_filter`). Flat

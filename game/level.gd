@@ -15,8 +15,8 @@ const SUN_ENERGY := 0.5
 ## White light all around, so shaded faces keep about the texture's own brightness.
 const AMBIENT_ENERGY := 0.75
 const SHADOW_DISTANCE := 300.0
-const GLOW_BLOOM := 0.05
-const FOG_DENSITY := 0.0007
+const GLOW_BLOOM := 0.0
+const FOG_DENSITY := 0.0002
 ## Sky modes (`show_sky`).
 const SKY_SHOWN := 0
 const SKY_BLACK := 1
