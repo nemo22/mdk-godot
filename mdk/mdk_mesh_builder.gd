@@ -24,6 +24,10 @@ const SPECIAL_RIPPLE := 1028  # Water.
 ## finely planes are told apart (1/64 of a unit).
 const LAYER_LIFT := 0.03
 const PLANE_STEPS := 64.0
+## The highest layer, so lifts stay small.
+const LAYER_HIGHEST := 3
+## Overlaps below this area (square units) are rounding: neighbours sharing an edge.
+const MIN_OVERLAP := 1e-3
 
 static var _positions_cache := {}
 
@@ -114,10 +118,11 @@ static func to_godot(v: Vector3) -> Vector3:
 ## The corners of every triangle of an arena (Godot coordinates), three per triangle. The original
 ## draws without a depth buffer, back to front, so details lying on a wall in its plane (windows,
 ## posters) simply cover it; with a depth buffer they'd flicker. So a triangle is lifted off its
-## plane, towards its front, by `LAYER_LIFT` for each bigger triangle of the same plane it lies on.
+## plane, towards its front, by `LAYER_LIFT` per depth layer (`arena_layers`).
 ##
 ##   wall ──────────────  layer 0
-##   poster   ────        layer 1 (+0.03 towards the viewer)
+##   poster   ────        layer 1 (+0.03 towards the viewer, also when only partly on the wall)
+##   sticker   ──         layer 2
 static func arena_positions(arena: MDKArena) -> PackedVector3Array:
 	var key := arena.get_instance_id()
 	if _positions_cache.has(key):
@@ -126,56 +131,103 @@ static func arena_positions(arena: MDKArena) -> PackedVector3Array:
 	positions.resize(arena.triangle_indices.size())
 	for i in positions.size():
 		positions[i] = to_godot(arena.vertices[arena.triangle_indices[i]])
-	_lift_layers(positions)
+	_lift_layers(arena, positions)
 	_positions_cache[key] = positions
 	return positions
 
 
-## Lifts the triangles lying on bigger ones of the same plane (see `arena_positions`).
-static func _lift_layers(positions: PackedVector3Array) -> void:
-	var count := positions.size() / 3
-	var normals := PackedVector3Array()
+## Lifts each triangle by its layer (see `arena_positions`).
+static func _lift_layers(arena: MDKArena, positions: PackedVector3Array) -> void:
+	var layers := arena_layers(arena)
+	for t in layers.size():
+		if layers[t] == 0:
+			continue
+		var normal := (positions[t * 3 + 2] - positions[t * 3]).cross(positions[t * 3 + 1] - positions[t * 3]).normalized()
+		for k in 3:
+			positions[t * 3 + k] += normal * LAYER_LIFT * layers[t]
+
+
+## The depth layer of each arena triangle: one above the highest bigger triangle of its plane it
+## overlaps (by area; of equal ones, the later in the data goes on top), at most `LAYER_HIGHEST`.
+static func arena_layers(arena: MDKArena) -> PackedInt32Array:
+	var count := arena.triangle_indices.size() / 3
+	var layers := PackedInt32Array()
+	layers.resize(count)
+	layers.fill(0)
 	var areas := PackedFloat32Array()
-	normals.resize(count)
 	areas.resize(count)
+	var normals := PackedVector3Array()
+	normals.resize(count)
+	var boxes: Array[AABB] = []
+	boxes.resize(count)
 	var planes := {}
 	for t in count:
-		var cross := (positions[t * 3 + 2] - positions[t * 3]).cross(positions[t * 3 + 1] - positions[t * 3])
+		var a := _corner(arena, t, 0)
+		var cross := (_corner(arena, t, 2) - a).cross(_corner(arena, t, 1) - a)
 		areas[t] = cross.length()
 		if areas[t] == 0.0:
 			continue
 		normals[t] = cross / areas[t]
+		boxes[t] = AABB(a, Vector3.ZERO).expand(_corner(arena, t, 1)).expand(_corner(arena, t, 2))
 		var key := Vector4(roundf(normals[t].x * PLANE_STEPS), roundf(normals[t].y * PLANE_STEPS),
-				roundf(normals[t].z * PLANE_STEPS), roundf(normals[t].dot(positions[t * 3]) * PLANE_STEPS))
+				roundf(normals[t].z * PLANE_STEPS), roundf(normals[t].dot(a) * PLANE_STEPS))
 		if not planes.has(key):
-			planes[key] = PackedInt32Array()
+			planes[key] = []
 		planes[key].push_back(t)
 
-	var lifts := PackedFloat32Array()
-	lifts.resize(count)
-	for triangles: PackedInt32Array in planes.values():
-		for a in triangles:
-			for b in triangles:
-				# Equal ones: the later in the data goes on top.
-				var bigger := areas[b] > areas[a] or (areas[b] == areas[a] and b < a)
-				if bigger and _covers(positions, b, a, normals[b]):
-					lifts[a] += LAYER_LIFT
-	for t in count:
-		if lifts[t] > 0.0:
-			for k in 3:
-				positions[t * 3 + k] += normals[t] * lifts[t]
+	# Biggest first: each triangle goes one layer above the highest bigger one it overlaps.
+	var bigger_first := func(x: int, y: int) -> bool: return areas[x] > areas[y] or (areas[x] == areas[y] and x < y)
+	for plane: Array in planes.values():
+		plane.sort_custom(bigger_first)
+		for i in range(1, plane.size()):
+			var t: int = plane[i]
+			for j in i:
+				var under: int = plane[j]
+				if layers[under] < layers[t] or not boxes[under].grow(MIN_OVERLAP).intersects(boxes[t]):
+					continue
+				if _overlap(arena, t, under, normals[t]) > MIN_OVERLAP:
+					layers[t] = mini(layers[under] + 1, LAYER_HIGHEST)
+	return layers
 
 
-## Whether triangle `cover`'s plane triangle holds the centre of triangle `t`.
-static func _covers(positions: PackedVector3Array, cover: int, t: int, normal: Vector3) -> bool:
-	var centre := (positions[t * 3] + positions[t * 3 + 1] + positions[t * 3 + 2]) / 3.0
-	for i in 3:
-		var a := positions[cover * 3 + i]
-		var b := positions[cover * 3 + (i + 1) % 3]
-		var c := positions[cover * 3 + (i + 2) % 3]
-		if normal.dot((b - a).cross(centre - a)) * normal.dot((b - a).cross(c - a)) < 0.0:
-			return false
-	return true
+static func _corner(arena: MDKArena, t: int, k: int) -> Vector3:
+	return arena.vertices[arena.triangle_indices[t * 3 + k]]
+
+
+## The area two triangles of a plane share: one clipped by the other's edges (Sutherland-Hodgman),
+## in the plane's 2D coordinates around the first corner.
+static func _overlap(arena: MDKArena, t: int, other: int, normal: Vector3) -> float:
+	var origin := _corner(arena, t, 0)
+	var u := normal.cross(Vector3.RIGHT if absf(normal.x) < 0.9 else Vector3.FORWARD).normalized()
+	var v := normal.cross(u)
+	var flat := func(p: Vector3) -> Vector2: return Vector2((p - origin).dot(u), (p - origin).dot(v))
+	var polygon := PackedVector2Array([flat.call(origin), flat.call(_corner(arena, t, 1)), flat.call(_corner(arena, t, 2))])
+	var clip := PackedVector2Array([flat.call(_corner(arena, other, 0)), flat.call(_corner(arena, other, 1)), flat.call(_corner(arena, other, 2))])
+	var winding := signf((clip[1] - clip[0]).cross(clip[2] - clip[0]))
+	for e in 3:
+		if polygon.is_empty():
+			break
+		polygon = _clip_by(polygon, clip[e], clip[(e + 1) % 3], winding)
+
+	var twice := 0.0
+	for k in polygon.size():
+		twice += polygon[k].cross(polygon[(k + 1) % polygon.size()])
+	return absf(twice) / 2.0
+
+
+## The part of a polygon on the inner side of the edge from `a` to `b`.
+static func _clip_by(polygon: PackedVector2Array, a: Vector2, b: Vector2, winding: float) -> PackedVector2Array:
+	var kept := PackedVector2Array()
+	for k in polygon.size():
+		var p := polygon[k]
+		var q := polygon[(k + 1) % polygon.size()]
+		var sp := winding * (b - a).cross(p - a)
+		var sq := winding * (b - a).cross(q - a)
+		if sp >= 0.0:
+			kept.push_back(p)
+		if (sp >= 0.0) != (sq >= 0.0):
+			kept.push_back(p + (q - p) * (sp / (sp - sq)))
+	return kept
 
 
 ## Builds the world mesh of an arena (or of some of its triangles), with one surface per material.

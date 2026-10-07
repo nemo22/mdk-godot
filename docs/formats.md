@@ -303,6 +303,15 @@ half's edge flags), so thin lines cross them. The port's enhanced look skips fla
 coplanar triangles share (`MDKMeshBuilder._inner_edges`, `tests/glass_outline_test.gd`); the
 original look draws them all, as the original.
 
+#### Coplanar details (port)
+
+The original draws without a depth buffer, back to front, so a detail lying in a bigger triangle's
+plane (a poster, LEVEL6 OLYM_7's mirror tiles on the floor, OLYM_5's hub rims on the glass) simply
+covers it. With a depth buffer they fight. The port gives each triangle a depth layer: one above
+the highest bigger triangle of its plane it overlaps by area (Sutherland-Hodgman clip; of equal
+ones the later in the data), at most 3 (`MDKMeshBuilder.arena_layers`, `tests/layer_test.gd`), and
+lifts it by 0.03 a layer towards its front. A centre test missed partial overlaps.
+
 ### RIPPLE (1028)
 
 - D3D: never drawn ✅ (`if (m == -0x404) return;` in all submit functions).
