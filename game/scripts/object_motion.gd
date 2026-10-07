@@ -55,6 +55,8 @@ func update(obj: MDKObject) -> void:
 	_apply_velocity(obj)
 	if obj.dead:
 		return
+	if obj.flags & MDKObject.FLAG_CHANGES_ARENA:
+		runtime.follow_arenas(obj)
 	# Kurt's items and effects (0x1000), or else pickups (0x200000).
 	if obj.thrown_kind > 0:
 		runtime.items.update_thrown(obj)

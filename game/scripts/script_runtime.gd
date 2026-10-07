@@ -403,12 +403,21 @@ func _check_triggers() -> void:
 			preload_arena(arena_name)
 
 
-## The arena Kurt enters when his move crosses a connection of his arena (0x41c550, every tick),
-## or an empty string. E.g. LEVEL4 MEAT_7 1012 (+y at y = 14822) → CMEAT_7.
-func _crossed_arena(from: Vector3, to: Vector3) -> String:
-	for record: Dictionary in level.get_arena_records(current_arena):
+## An object with `MDKObject.FLAG_CHANGES_ARENA` goes into the arena whose connection its last move
+## crossed (0x45e810, 0x43ca00): the board follows Kurt, so its script keeps running (LEVEL4's
+## first run ends in MEAT_3).
+func follow_arenas(obj: MDKObject) -> void:
+	var arena_name := _crossed_arena(obj.arena, obj.previous_position, obj.mdk_position)
+	if not arena_name.is_empty():
+		obj.arena = arena_name
+
+
+## The arena a move enters when it crosses a connection of `arena_name` (0x41c550, every tick), or
+## an empty string. E.g. LEVEL4 MEAT_7 1012 (+y at y = 14822) → CMEAT_7.
+func _crossed_arena(arena_name: String, from: Vector3, to: Vector3) -> String:
+	for record: Dictionary in level.get_arena_records(arena_name):
 		if record.type == Level.CONNECTION and _crosses_doorway(record, from, to):
-			return level.get_connection(current_arena, record.id)
+			return level.get_connection(arena_name, record.id)
 	return ""
 
 
@@ -529,7 +538,7 @@ func _tick() -> void:
 		if not current_arena.is_empty() and not _connects(current_arena, arena_name):
 			arena_name = current_arena
 	else:
-		arena_name = _crossed_arena(_previous_kurt_position, kurt_position)
+		arena_name = _crossed_arena(current_arena, _previous_kurt_position, kurt_position)
 	if not arena_name.is_empty() and arena_name != current_arena:
 		# Crossing into another arena: the one left stays as the active second arena.
 		if not current_arena.is_empty():

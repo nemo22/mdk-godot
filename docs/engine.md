@@ -124,6 +124,10 @@ walkers). 0x1, 0x2 and 0x10 are cleared at the start of each velocity step.
   pit through the back of OLYM_6's hidden walls (group 3, y = 2772 and a diagonal). The port gives
   each triangle group a one-sided copy on `Level.OBJECT_LAYER` for the probe, and ignores an
   overlap the motion leaves sideways (`tests/rolling_ball_test.gd`).
+- Objects with flag 0x80000 (the ridden board, set when Kurt gets on; thrown items) go into the
+  arena whose connection their move crosses (0x45e810, 0x43ca00). LEVEL4's first board run
+  (MEAT_1 → CMEAT_1 → MEAT_3) ends by the board's script, which waits for Kurt in a box of MEAT_3:
+  a board left in MEAT_1 stops updating and Kurt never gets off (`tests/board_run_test.gd`).
 - Objects more than 200 units below their arena's lowest point (`arena+0x44e`) die (0x43d884): the
   death script runs (and the object is put back 150 units below the floor, without gravity), or the
   object is removed.
