@@ -377,6 +377,9 @@ func restore(data: Dictionary) -> void:
 
 
 func teleport(p_position: Vector3, p_yaw: float) -> void:
+	# The chute closes silently.
+	chute_open = false
+	_stop_chute_sound()
 	global_position = p_position
 	yaw = p_yaw
 	velocity = Vector3.ZERO
@@ -472,9 +475,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	invulnerable = maxf(invulnerable - delta, 0.0)
 	if frozen:
+		_stop_chute_sound()
 		velocity = Vector3.ZERO
 		return
 	if state == State.DEAD:
+		_stop_chute_sound()
 		leave_sniper()
 		_update_death(delta)
 		return
@@ -486,6 +491,7 @@ func _physics_process(delta: float) -> void:
 	if ride.is_valid():
 		# No knock-down, chute or ledges while riding.
 		knock_damage = 0.0
+		_stop_chute_sound()
 		ride.call(delta)
 		return
 	_update_knock_damage(delta)
@@ -1385,6 +1391,12 @@ func _update_chute_sound() -> void:
 		return
 	mixer.stop("CHUTEON")
 	play_sound("CHUTEIN")
+
+
+## `CHUTEON` stops without `CHUTEIN` when Kurt leaves the chute otherwise: death, a teleport, a
+## ride, a cutscene or the level's end (it played on until the level ended).
+func _stop_chute_sound() -> void:
+	mixer.stop("CHUTEON")
 
 
 func _set_state(new_state: State) -> void:

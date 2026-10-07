@@ -329,7 +329,8 @@ Only used by scripts (never by code): `ALDIE` (level copy), `GRUNTFIRE`, `XF_AMB
   meta), 2D/3D and fixed/following voices as in §4 (script `play_sound` positions 0x10/0x20/0x40,
   `set_loop_sound`, the decoy's `DUMMY`, Bones' `DROP`, the nuke's `NUKE`, 2D pickups, tornado and
   end of level). Kurt's own loops (`MULTIFIRE`/`GATTFIRE`, `FAN`, `BUTSLIDE`/`BUTBRAKE`, `BREATH`,
-  `ZOOM`) keep their players; `CHUTEON`/`CHUTEIN` follow the chute.
+  `ZOOM`) keep their players; `CHUTEON`/`CHUTEIN` follow the chute. Death, teleports, rides,
+  cutscenes and the level's end stop `CHUTEON` without `CHUTEIN` (`tests/chute_sound_test.gd`).
 - `LevelAudio` fades the arena music as in §3 (8.7 s in, 4.35 s out, `CORRIDOR` in corridors,
   swapping back to a fading track); the tracks are loaded at once, not streamed.
 - Differences: Godot pans the 3D voices correctly (not the original's heading-dependent pan) and
