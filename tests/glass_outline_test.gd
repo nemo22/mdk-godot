@@ -1,7 +1,8 @@
 ## Test: LEVEL7's DANT_7 glass columns flag diagonals inside their panes (the editor gave fan
 ## triangles the edge flags of a quad's half), so thin lines cross the panes. The original (0x40b7f0)
 ## draws every flagged edge: the original look keeps them. The enhanced look skips flagged edges two
-## coplanar triangles share, keeping the frames.
+## coplanar triangles share, keeping the frames. Outlines lying on edges came out dotted: they're
+## drawn pulled towards the eye by 1/128 of their distance, as the original draws them after.
 ## Run: godot --headless --audio-driver Dummy --path . -s tests/glass_outline_test.gd
 extends SceneTree
 
@@ -11,6 +12,7 @@ const ARENA := "DANT_7"
 const OUTLINE := 1 << 23
 const ORIGINAL := 0
 const ENHANCED := 1
+const LINE_PULL := 1.0 / 128.0
 
 var _failures := 0
 
@@ -34,6 +36,11 @@ func _run() -> void:
 	_expect(original > 0, "no outlines")
 	_expect(enhanced < original, "the enhanced look keeps the diagonals")
 	_expect(enhanced > 0, "the enhanced look drops the frames")
+
+	var mesh := ArrayMesh.new()
+	builder._add_outlines(mesh, arena, outlined, StandardMaterial3D.new(), ORIGINAL)
+	var material := mesh.surface_get_material(0) as ShaderMaterial
+	_expect(material != null and is_equal_approx(material.get_shader_parameter(&"pull"), LINE_PULL), "outlines not pulled")
 
 	print("FAILED %d" % _failures if _failures else "PASSED")
 	quit(1 if _failures else 0)

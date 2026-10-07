@@ -6,6 +6,7 @@ const PALETTE_SHADER := preload("res://mdk/shaders/palette.gdshader")
 const PALETTE_DOUBLE_SIDED_SHADER := preload("res://mdk/shaders/palette_double_sided.gdshader")
 const PALETTE_LIT_SHADER := preload("res://mdk/shaders/palette_lit.gdshader")
 const PALETTE_LIT_DOUBLE_SIDED_SHADER := preload("res://mdk/shaders/palette_lit_double_sided.gdshader")
+const OUTLINE_SHADER := preload("res://mdk/shaders/outline.gdshader")
 
 ## The original look (unlit, nearest texels) or the enhanced one (lit, filtered).
 enum Look { ORIGINAL, ENHANCED }
@@ -37,6 +38,11 @@ const OUTLINE := 1 << 23
 const OUTLINE_EDGES := [[1 << 20, 0, 1], [1 << 21, 1, 2], [1 << 22, 2, 0]]
 ## Normals at most ~2.5° apart: one flat surface.
 const COPLANAR_COS := 0.999
+## Outlines are drawn pulled towards the eye by this share of their distance (`outline.gdshader`).
+const LINE_PULL := 1.0 / 128.0
+
+## A colour material to its outline material.
+static var _line_materials := {}
 
 
 ## Resolves MDK material references (texture names, palette colors) to Godot materials.
@@ -280,6 +286,8 @@ static func _add_outlines(mesh: ArrayMesh, arena: MDKArena, triangles: PackedInt
 	if material.has_meta(&"uv_scale"):
 		return
 	var inner := _inner_edges(arena, triangles) if look == Look.ENHANCED else {}
+	# On the triangles' layers.
+	var positions := arena_positions(arena)
 	var lines := PackedVector3Array()
 	for tri in triangles:
 		var flags := arena.triangle_flags[tri]
@@ -290,15 +298,29 @@ static func _add_outlines(mesh: ArrayMesh, arena: MDKArena, triangles: PackedInt
 			var b := arena.triangle_indices[tri * 3 + edge[2]]
 			if not flags & edge[0] or inner.has(Vector2i(mini(a, b), maxi(a, b))):
 				continue
-			lines.push_back(to_godot(arena.vertices[a]))
-			lines.push_back(to_godot(arena.vertices[b]))
+			lines.push_back(positions[tri * 3 + edge[1]])
+			lines.push_back(positions[tri * 3 + edge[2]])
 	if lines.is_empty():
 		return
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = lines
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
-	mesh.surface_set_material(mesh.get_surface_count() - 1, material)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, _line_material(material))
+
+
+## The material of outlines in a colour material's colour, pulled towards the eye: the original
+## draws them after the triangles, so they cover the edges they lie on.
+static func _line_material(material: Material) -> Material:
+	if not material is BaseMaterial3D:
+		return material
+	if not _line_materials.has(material):
+		var line := ShaderMaterial.new()
+		line.shader = OUTLINE_SHADER
+		line.set_shader_parameter(&"albedo", (material as BaseMaterial3D).albedo_color)
+		line.set_shader_parameter(&"pull", LINE_PULL)
+		_line_materials[material] = line
+	return _line_materials[material]
 
 
 ## The edges (vertex index pairs, lower first) two coplanar triangles share.

@@ -311,6 +311,10 @@ covers it. With a depth buffer they fight. The port gives each triangle a depth 
 the highest bigger triangle of its plane it overlaps by area (Sutherland-Hodgman clip; of equal
 ones the later in the data), at most 3 (`MDKMeshBuilder.arena_layers`, `tests/layer_test.gd`), and
 lifts it by 0.03 a layer towards its front. A centre test missed partial overlaps.
+Outlines lie on their triangles' layers and are drawn pulled towards the eye by 1/128 of their
+distance (`mdk/shaders/outline.gdshader`: the same place on screen, nearer in depth), as the
+original draws them after the triangles; on the edge's depth they came out dotted. ❓ Checked only
+by reasoning: the tests run headless, without a renderer.
 
 ### RIPPLE (1028)
 
