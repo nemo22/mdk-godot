@@ -487,6 +487,7 @@ func _physics_process(delta: float) -> void:
 		_tick()
 		_tick_usec += Time.get_ticks_usec() - start
 		_tick_count += 1
+	rides.follow()
 
 
 ## Kurt fell out of his arena (not while riding: the rides move him themselves).

@@ -598,7 +598,11 @@ of level 7's `DANT_9`, and the `XE` bomber of level 7's `DANT_5` (0x46bf40).
 the board. Kurt running into a triangle group of his arena hits it (kind 8, 0x46634e), which is how
 the board breaks the ice walls; the camera rolls with the board's bank (`CameraRoll.follow`) and
 its pivot dips during jumps (`MDKSnowboard.jump_pivot`, `Kurt.camera_pivot`, test
-`tests/board_pivot_test.gd`). Tests: `tests/snowboard_test.sh`.
+`tests/board_pivot_test.gd`). Tests: `tests/snowboard_test.sh`. Kurt moves each physics step (60 per
+second), the objects each tick (30): after the ticks of every step the `XD2` is put where Kurt is
+and Kurt where the `XE` is (`MDKRides.follow`), else every other frame drew them up to a unit apart
+(`tests/ride_sync_test.gd`). The camera can't lag a platform carrying Kurt: it follows his
+interpolated transform each frame.
 
 ### The snowboard (`XSNOWB`, 0x46ac4c)
 

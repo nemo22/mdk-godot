@@ -54,6 +54,23 @@ func update() -> void:
 		_update_walker()
 
 
+## Each physics step, after the ticks: the `XD2` is where Kurt is, Kurt where the `XE` is. Kurt
+## moves each step, they each tick: else every other frame draws them apart (a ghost).
+func follow() -> void:
+	if not ridden or _board:
+		return
+
+	var kurt := _runtime.kurt
+	if bomber:
+		kurt.global_position = MDKMeshBuilder.to_godot(ridden.mdk_position)
+		kurt.yaw = deg_to_rad(ridden.yaw - 90.0)
+		return
+
+	ridden.mdk_position = MDKScriptRuntime.to_mdk(kurt.global_position)
+	ridden.yaw = fposmod(rad_to_deg(kurt.yaw) + 90.0, 360.0)
+	ridden.update_transform()
+
+
 ## Whether Kurt rides the snowboard.
 func on_board() -> bool:
 	return _board != null
