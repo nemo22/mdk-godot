@@ -4983,7 +4983,7 @@
    }
   ],
   "flow": "next",
-  "summary": "If the group g of the triangle under the player (0x573c10, flags >> 24) satisfies 0 < first <= g <= last: for every group i in first..last applies op (as in 98, on the player's arena 0x573a0c) when g-below <= i <= g+above and the opposite op (0<->1, 2<->3, 4<->5) otherwise, only where the arena masks say the state changes.",
+  "summary": "If the group g of the triangle under the player (0x573c10, flags >> 24) satisfies 0 < first <= g <= last: for every group i in first..last applies the opposite op (0<->1, 2<->3, 4<->5) when g-below <= i <= g+above and op (as in 98, on the player's arena 0x573a0c) otherwise (0x453a1e: the groups near Kurt shown, the far ones hidden), only where the arena masks say the state changes.",
   "fields": [
    "arena+0x10c",
    "arena+0x110"

@@ -608,10 +608,6 @@ func _tick() -> void:
 	_previous_kurt_position = kurt_position
 	if kurt.firing:
 		fire_chain_gun()
-	if not current_arena.is_empty():
-		vm.run(get_arena_state(current_arena).controller)
-	if second_active and not second_arena.is_empty():
-		vm.run(get_arena_state(second_arena).controller)
 	items.update_twisters()
 	effects.update(1.0)
 	fans.update()
@@ -637,6 +633,12 @@ func _tick() -> void:
 		# Kurt moves and turns with the platform he stands on (e.g. LEVEL6's lift drops 25 a tick).
 		if obj == platform and not obj.dead:
 			_carry_kurt(obj, from, obj.yaw - from_yaw)
+	# Then the arenas' own scripts (`game_frame`: 0x43c7dc, then 0x440bc8). E.g. MEAT_5's
+	# `arena_show NONE` drops CMEAT_4 only after the ridden board there followed Kurt in.
+	if not current_arena.is_empty():
+		vm.run(get_arena_state(current_arena).controller)
+	if second_active and not second_arena.is_empty():
+		vm.run(get_arena_state(second_arena).controller)
 
 
 ## `special_event` (opcode 131, 0x4456d2): cutscenes (events above 50, 0x477cf4) or the end of the

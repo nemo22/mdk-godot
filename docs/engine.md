@@ -383,6 +383,9 @@ Frame order in `game_frame` 0x41d4d8: objects of Kurt's arena (0x43c7dc) → fre
 → **if 0x573a6c && 0x573a68: second arena's script** → pending teleport (0x41bce4) → connection crossing →
 triggers 0x41bf1c → camera → draw → triangle-group update 0x40d46c (Kurt's, second if 0x573a6c) → … →
 deactivation (end of frame).
+The port keeps this order: Kurt's crossing is checked first, but the arena scripts run after the
+objects, else MEAT_5's `arena_show NONE` (LEVEL4) dropped CMEAT_4 before the ridden board there
+crossed into MEAT_5, and its script never let Kurt off (`tests/board_run2_test.gd`).
 
 | System | Kurt's | Second when 0x573a6c = 1 | Second when 0x573a6c = 0 (preloaded) | Other arenas |
 | --- | --- | --- | --- | --- |
@@ -761,7 +764,8 @@ exist for groups 1–16). Scripts change groups at run time:
 - `group_set_hit_flags` (168) and `group_on_hit` (99) make groups react to hits: flag 0x80 makes a
   group destructible (it's hidden until hit, then shown: its damaged version), hits increase the
   group's counter (`arena+0xcc`, opcodes 162/163) and can run a script (0x40d560).
-- `group_state_near_player` (194) applies a state to the groups around the one under Kurt.
+- `group_state_near_player` (194) gives the groups around the one under Kurt the opposite of its
+  op, the others the op (0x453a1e; LEVEL4's boards: op 2, the slope near Kurt shown, the rest hidden).
 
 ### Group hits (0x40d560)
 

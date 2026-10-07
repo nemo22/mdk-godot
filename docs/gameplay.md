@@ -890,7 +890,8 @@ Kurt).
 | `MEAT_2` 0x4a0f | 14 keys, 0–200, 3564 u | set 0x6000000, clear 6 and 0x4000000 | — | none in its script ❓ (maybe unused) |
 
 After dismount each script sets flags 6, `stop_path`, and `set_health 0` when the board lands.
-Which of these rides the normal level reaches (MEAT_2, CMEAT_3) is ❓.
+CMEAT_3's run goes through MEAT_4 and CMEAT_4 into MEAT_5 (≈ 145 s without keys); MEAT_7's through
+CMEAT_7, MEAT_8 and CMEAT_8 into MEAT_10. Whether the normal level reaches MEAT_2's is ❓.
 
 ### Constants ✅
 

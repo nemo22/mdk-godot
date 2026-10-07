@@ -747,12 +747,12 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			runtime.get_arena_state(obj.arena).group_counters[(o[0] - 1) & 15] = o[1]
 		163:  # if_arena_counter
 			return _branch(obj, ins, _compare(runtime.get_arena_state(obj.arena).group_counters[(o[0] - 1) & 15], o[1]))
-		194:  # group_state_near_player: groups around the one under Kurt get the op, the others its opposite
+		194:  # group_state_near_player: groups around the one under Kurt get the opposite op, the others the op (0x453a1e)
 			var floor_group := runtime.get_kurt_floor_group()
 			if o[1] > 0 and floor_group >= o[1] and floor_group <= o[2]:
 				for group in range(o[1], o[2] + 1):
 					var near: bool = group >= floor_group - o[3] and group <= floor_group + o[4]
-					var op: int = o[0] if near else o[0] ^ 1
+					var op: int = o[0] ^ 1 if near else o[0]
 					runtime.level.set_group_state(runtime.current_arena, group, op)
 
 		# Conditions about Kurt, the arena and chance.
