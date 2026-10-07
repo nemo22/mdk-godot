@@ -125,6 +125,10 @@ func _variables(obj: MDKObject, source: int) -> Array:
 	return obj.linked.variables if obj.linked else [0.0, 0.0, 0.0, 0.0]
 
 
+## Flag word 5: a door's own state (obj+0x312, 0x440a34); nothing on other objects.
+const DOOR_FLAGS := 5
+
+
 func _get_flags(obj: MDKObject, source: int) -> int:
 	match source:
 		0:
@@ -133,6 +137,8 @@ func _get_flags(obj: MDKObject, source: int) -> int:
 			return runtime.get_arena_state(obj.arena).flags
 		2:
 			return obj.script_flags
+		DOOR_FLAGS:
+			return obj.door_state if obj.flags & MDKObject.FLAG_DOOR else 0
 	return obj.linked.script_flags if obj.linked else 0
 
 
@@ -144,6 +150,9 @@ func _set_flags(obj: MDKObject, source: int, value: int) -> void:
 			runtime.get_arena_state(obj.arena).flags = value
 		2:
 			obj.script_flags = value
+		DOOR_FLAGS:
+			if obj.flags & MDKObject.FLAG_DOOR:
+				obj.door_state = value
 		_:
 			if obj.linked:
 				obj.linked.script_flags = value

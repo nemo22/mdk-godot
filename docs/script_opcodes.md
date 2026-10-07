@@ -73,10 +73,10 @@ depend on other operands (see `complex_operand()` in
 | 65 | `set_var` | u8 src, u8 index, f32 value | next | Variable src/index = value. |
 | 66 | `add_var` | u8 src, u8 index, f32 value | next | Variable src/index += value. |
 | 67 | `if_var` | u8 src, u8 index, cond: *cond*, action: *action* | branch | If variable src/index (0 global, 1 arena, 2 own, other = linked object obj+0x2b8; index 0..3) passes the condition, perform the action. |
-| 68 | `set_flag` | u8 src, u8 bit | next | Set bit (bit&31) in flag word src (0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 obj+0x312 when obj+0x14a bit 4 is set, other = linked object's +0x244). |
+| 68 | `set_flag` | u8 src, u8 bit | next | Set bit (bit&31) in flag word src (0x440a34: 0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 the door state obj+0x312 of a door (obj+0x14a bit 4, flag 0x100000), other = linked object's +0x244; a non-door's word 5 or a missing linked object = the scratch dword 0x491eb0). |
 | 69 | `clear_flag` | u8 src, u8 bit | next | Clear bit (bit&31) in flag word src. |
 | 70 | `toggle_flag` | u8 src, u8 bit | next | Toggle bit (bit&31) in flag word src. |
-| 71 | `if_flag_set` | u8 src, u8 bit, action: *action* | branch | If bit (bit&31) of flag word src (0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 obj+0x312, other = linked object's +0x244) is set, perform the action. |
+| 71 | `if_flag_set` | u8 src, u8 bit, action: *action* | branch | If bit (bit&31) of flag word src (0x440a34: 0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 the door state obj+0x312 of a door (obj+0x14a bit 4, flag 0x100000), other = linked object's +0x244; a non-door's word 5 or a missing linked object = the scratch dword 0x491eb0) is set, perform the action. |
 | 72 | `if_flag_clear` | u8 src, u8 bit, action: *action* | branch | If bit (bit&31) of flag word src is clear, perform the action. |
 | 73 | `set_obey_level` | u8 v | next | obj+0x11b = v (accepts commands from senders whose obj+0x11a <= v). |
 | 74 | `attach_to` | u8 a (-> obj+0x276), u8 b (-> obj+0x277), pstr name_id ("<model>_<id>") | next | Find the active object of the own arena whose "%s_%d" (model name, id) equals name_id (the last match wins) and link to it: obj+0x278 = obj+0x138 = it, motion obj+0x11e = 74 (follow/attach). |

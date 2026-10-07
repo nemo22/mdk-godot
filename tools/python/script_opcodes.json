@@ -1507,7 +1507,7 @@
    }
   ],
   "flow": "next",
-  "summary": "Set bit (bit&31) in flag word src (0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 obj+0x312 when obj+0x14a bit 4 is set, other = linked object's +0x244).",
+  "summary": "Set bit (bit&31) in flag word src (0x440a34: 0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 the door state obj+0x312 of a door (obj+0x14a bit 4, flag 0x100000), other = linked object's +0x244; a non-door's word 5 or a missing linked object = the scratch dword 0x491eb0).",
   "fields": [
    "obj+0x244"
   ],
@@ -1582,7 +1582,7 @@
    }
   ],
   "flow": "branch",
-  "summary": "If bit (bit&31) of flag word src (0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 obj+0x312, other = linked object's +0x244) is set, perform the action.",
+  "summary": "If bit (bit&31) of flag word src (0x440a34: 0 global 0x573b5c, 1 arena+0x58, 2 own obj+0x244, 5 the door state obj+0x312 of a door (obj+0x14a bit 4, flag 0x100000), other = linked object's +0x244; a non-door's word 5 or a missing linked object = the scratch dword 0x491eb0) is set, perform the action.",
   "fields": [
    "obj+0x244",
    "obj+0x108",
