@@ -121,7 +121,7 @@ func _try_mount() -> void:
 			return
 
 
-## The objects Kurt stands on or touches this tick.
+## The objects Kurt stands on, touches or is inside of this tick.
 func _touched() -> Array[MDKObject]:
 	var kurt := _runtime.kurt
 	var found: Array[MDKObject] = []
@@ -129,6 +129,9 @@ func _touched() -> Array[MDKObject]:
 		var body := kurt.get_slide_collision(i).get_collider() as Node
 		var obj := body.get_parent() as MDKObject if body else null
 		if obj and not obj.dead and obj not in found:
+			found.push_back(obj)
+	for obj in kurt.passed_objects:
+		if not obj.dead and obj not in found:
 			found.push_back(obj)
 	return found
 

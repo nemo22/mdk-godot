@@ -593,9 +593,9 @@ Kurt rides an object ("control alien") instead of walking: the snowboard of leve
 of level 7's `DANT_9`, and the `XE` bomber of level 7's `DANT_5` (0x46bf40).
 
 **In the port** (`MDKRides`, `MDKSnowboard`, `MDKBomber`, `Kurt.walk_mode`): all three, with their sounds;
-`if_is_573c30` (171) tests the ridden object; hits on Kurt go to the `XD2`; standable objects
-(0x800000) are solid for Kurt even when he passes through them otherwise (0x800), so he can land on
-the board. Kurt running into a triangle group of his arena hits it (kind 8, 0x46634e), which is how
+`if_is_573c30` (171) tests the ridden object; hits on Kurt go to the `XD2`; the waiting board
+(0x800900) is a floor only (0x800 walls off, 0x100 floor on; engine.md "Kurt and objects"), so he
+lands on it. Kurt running into a triangle group of his arena hits it (kind 8, 0x46634e), which is how
 the board breaks the ice walls; the camera rolls with the board's bank (`CameraRoll.follow`) and
 its pivot dips during jumps (`MDKSnowboard.jump_pivot`, `Kurt.camera_pivot`, test
 `tests/board_pivot_test.gd`). Tests: `tests/snowboard_test.sh`. Kurt moves each physics step (60 per

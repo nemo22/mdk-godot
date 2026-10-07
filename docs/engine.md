@@ -71,13 +71,13 @@ the low byte). Identified bits:
 | 0x2 | gravity; friction is then horizontal only (opcode 36) |
 | 0x4 | collides with the arena geometry (opcode 35) |
 | 0x8 | the animation loops (opcodes 3/59) |
-| 0x10 | Kurt goes through it (opcode 63; doors set it while open) |
+| 0x10 | Kurt goes through it and can't stand on it (opcode 63; doors set it while open) |
 | 0x40 | rolling (opcode 85) |
 | 0x80 | no automatic banking/pitch (opcode 97) |
 | 0x100 | a platform Kurt can stand on (`damp_platform_floor`) |
 | 0x200 | set by `follow_path` flags1 bit 0 |
 | 0x400 | the path is played once (`follow_path` flags2 bit 0) |
-| 0x800 | Kurt goes through it (pickups, projectiles) |
+| 0x800 | Kurt walks through it (pickups, projectiles), but stands on it with 0x100 |
 | 0x1000 | Kurt's projectiles and effects (0x43deac) |
 | 0x10000 | doesn't turn to face its movement (paths, flying) |
 | 0x20000 | a pickup that has landed |
@@ -578,11 +578,31 @@ and level 5 (`MUSE_4`, script 26930). `SW_HCOW` is in the model tables of levels
 
 ### Kurt and objects (`damp_collide_move` 0x465e34, `damp_platform_floor` 0x41d2c4)
 
-Kurt collides with the objects of his arena that are active, alive (health ≠ 0) and have neither
-flag 0x10 nor 0x800: first their whole bounds (`obj+0x198`), then each visible model part's box
-(the part's bounds in the current animation frame, `part+0x44`), skipping the hidden parts
-(`obj+0x2c8`) and the `LOCK` parts of doors. Objects with flag 0x100 are platforms: Kurt can stand
-on them (`0x573b84`) and they carry him when they move or turn.
+Kurt walks into the objects of his arena that are active, alive (health ≠ 0) and have neither
+flag 0x10 nor 0x800 (`flags & 0x810`): first their whole bounds (`obj+0x198`), then each visible
+model part's box (the part's bounds in the current animation frame, `part+0x44`), skipping the
+hidden parts (`obj+0x2c8`) and the `LOCK` parts of doors. This only clips his XY move; his Z comes
+from the BSP alone. The box of the platform he stands on starts 1 above his feet.
+
+`damp_platform_floor` stands him on objects with flag 0x100 and without 0x10 (byte `obj+0x148`
+bit 4 clear, `obj+0x149` bit 0 set), whatever 0x800: a ray from 3 above his feet to 3 below
+(0x4945d8/0x4945e0) against the visible parts; the last hit is the platform (`0x573b84`), which
+carries him when it moves or turns. 0x800000 decides neither: landed on such a platform
+(`damp_gravity` 0x469efc), `0x573b8c` = 1 and the scan is skipped, he keeps it (getting on the
+snowboard, below).
+
+| Flags | Walls | Floor | E.g. (level) |
+| --- | --- | --- | --- |
+| none | yes | no | grunts, doors, turrets |
+| 0x100 (+0x800000) | yes | yes | `XPGUN` (3), `XBGUN`, `XTR` (6), `XTANK` (7), `X10_CAP` (8) |
+| 0x800 + 0x100 | no | yes | `XWINCH` (3), `XSNOWB` 0x800900 before it's ridden (4) |
+| 0x10, or 0x800 without 0x100 | no | no | pickups, bolts, `X4_TOWER` (5), `X3_BALC` (6), `XFORK` 0x810 (8) |
+
+- The port (`MDKObject.update_body`, `Kurt._one_way_bodies`): floor-only bodies get layer
+  `FLOOR_ONLY_LAYER`, wall-only ones `WALL_ONLY_LAYER`; Kurt passes through the first while his
+  feet are under their top, the second while above it. Bodies he's inside of, but floor-only
+  ones, count as touched (`Kurt.passed_objects`, as `0x573c2c`): he mounts the `XE` by falling
+  through it. Test `tests/object_flags_test.gd`.
 
 - The port (`MDKScriptRuntime._kurt_carrier`, `_carry_kurt`): each tick, the platform under Kurt
   (a ray from 3 above his feet to 3 below) carries him by its move and turn, Godot's own platform

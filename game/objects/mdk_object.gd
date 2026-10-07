@@ -10,15 +10,23 @@ const ANIMATION_FPS := 30.0
 const FLAG_GRAVITY := 0x2
 const FLAG_COLLIDES := 0x4
 const FLAG_LOOP := 0x8
-## Kurt goes through the object (with 0x800).
+## Kurt goes through the object, and can't stand on it.
 const FLAG_NOT_SOLID := 0x10
 ## The chain gun doesn't aim at the object.
 const FLAG_NOT_TARGET := 0x20
 const FLAG_ROLLING := 0x40
 const FLAG_NO_BANKING := 0x80
+## Kurt walks through the object, but stands on it if a platform (0x100).
 const FLAG_NOT_SOLID_2 := 0x800
-## Kurt can stand on it (`set_targetable 2`), and ride it if it's rideable.
+## Kurt landed on it stays on it (`set_targetable 2`; `damp_gravity` 0x469efc).
 const FLAG_STANDABLE := 0x800000
+## Kurt can stand on it (`set_targetable`), unless 0x10.
+const FLAG_PLATFORM := 0x100
+## Layer of the bodies Kurt collides with, and the extra one of those he only stands on (0x800 +
+## 0x100) or only walks into (no 0x100); `kurt.gd` lets him through their sides or tops.
+const BODY_LAYER := 2
+const FLOOR_ONLY_LAYER := 32
+const WALL_ONLY_LAYER := 64
 ## Some parts take damage separately (`set_weak_parts`).
 const FLAG_WEAK_PARTS := 0x2000
 const FLAG_NO_TURNING := 0x10000
@@ -450,8 +458,8 @@ func get_pose_bounds() -> AABB:
 
 
 ## Updates the body Kurt collides with (`damp_collide_move` tests Kurt against the boxes of the
-## visible parts of objects that are alive and don't have flag 0x10 or 0x800; doors skip their
-## `LOCK` parts). Kurt can stand on the boxes and moving ones carry him.
+## visible parts of objects that are alive, walls or floors (see there); doors skip their
+## `LOCK` parts). Kurt can stand on the floors and moving ones carry him.
 ## Redraws the rope lines (`arena_build_drawlist` 0x4185f0 draws them as lines; the pair lines
 ## start 5 units higher).
 func update_ropes() -> void:
@@ -505,9 +513,11 @@ func remove_collision_exception(body: PhysicsBody3D) -> void:
 
 
 func update_body() -> void:
-	# Kurt lands on standable objects (0x800000, `damp_gravity`) even if he passes through them.
-	var passable := flags & FLAG_NOT_SOLID or (flags & FLAG_NOT_SOLID_2 and not flags & FLAG_STANDABLE)
-	var solid := model != null and not dead and health != 0 and not passable
+	# Walls: no 0x10, 0x800 (`damp_collide_move` 0x465e34); floors: 0x100, no 0x10
+	# (`damp_platform_floor` 0x41d2c4). E.g. the snowboard (0x800900) is a floor only.
+	var is_wall := not flags & (FLAG_NOT_SOLID | FLAG_NOT_SOLID_2)
+	var is_floor := (flags & (FLAG_NOT_SOLID | FLAG_PLATFORM)) == FLAG_PLATFORM
+	var solid := model != null and not dead and health != 0 and (is_wall or is_floor)
 	if not solid:
 		if _body and not _body_key.is_empty():
 			for shape in _body_shapes:
@@ -517,7 +527,6 @@ func update_body() -> void:
 	if not _body:
 		_body = AnimatableBody3D.new()
 		_body.sync_to_physics = false
-		_body.collision_layer = 2
 		_body.collision_mask = 0
 		add_child(_body)
 		for body in _exceptions:
@@ -527,6 +536,7 @@ func update_body() -> void:
 			shape.shape = BoxShape3D.new()
 			_body.add_child(shape)
 			_body_shapes.push_back(shape)
+	_body.collision_layer = BODY_LAYER | (0 if is_floor else WALL_ONLY_LAYER) | (0 if is_wall else FLOOR_ONLY_LAYER)
 	var skipped := hidden_parts | (lock_parts if flags & FLAG_DOOR else 0)
 	var key := "%d|%d|%d" % [animation.get_instance_id() if animation else 0, animation_frame, skipped]
 	if key == _body_key:

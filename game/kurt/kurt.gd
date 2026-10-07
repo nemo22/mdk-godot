@@ -172,6 +172,10 @@ const KNOCKDOWN_SLAM_SPEED := -64.0
 const PUSH_DRAIN := 0.1 * TICKS * TICKS
 ## Kurt is inside an object's body when he overlaps it by more than this.
 const INSIDE_DEPTH := 0.05
+## Floor-only and wall-only object bodies are looked for this far around Kurt; feet this far below
+## a box's top are under it.
+const ONE_WAY_REACH := 1.0
+const TOP_MARGIN := 0.25
 
 ## Muzzle flash (`K_MUZZF`) offsets in the states that don't show the chain gun firing by
 ## themselves (`damp_animate`): a random offset of 0–4 pixels is added. `SHOT` and `RUN_FIRE` have
@@ -310,6 +314,11 @@ var _climb_ticks := 0
 var _inside_bodies: Array[RID] = []
 ## Kurt's shape shrunk by `INSIDE_DEPTH`, to find the bodies he's inside.
 var _inside_shape: CapsuleShape3D
+## The objects Kurt is inside of that he'd walk into (not floor-only): he touches them, as the
+## original's XY sweep does when he falls through the `XE` (`0x573c2c`).
+var passed_objects: Array[MDKObject] = []
+## Kurt's shape grown by `ONE_WAY_REACH`, to find the floor-only and wall-only bodies near him.
+var _reach_shape: CapsuleShape3D
 var _jump_ticks_left := 0
 var _jump_released := true
 ## The original alternates two pairs of footstep sounds (`damp_animate`), `FOOT3`/`FOOT4` first.
@@ -682,8 +691,13 @@ func _update_inside_bodies() -> void:
 	query.transform = _shape.global_transform
 	query.collision_mask = 2
 	var inside: Array[RID] = []
+	passed_objects.clear()
 	for hit in get_world_3d().direct_space_state.intersect_shape(query, 16):
 		inside.push_back(hit.rid)
+		var body := hit.collider as CollisionObject3D
+		if body.collision_layer & MDKObject.FLOOR_ONLY_LAYER == 0 and body.get_parent() is MDKObject:
+			passed_objects.push_back(body.get_parent())
+	inside.append_array(_one_way_bodies())
 	for rid in _inside_bodies:
 		if rid not in inside:
 			PhysicsServer3D.body_remove_collision_exception(get_rid(), rid)
@@ -692,6 +706,31 @@ func _update_inside_bodies() -> void:
 			PhysicsServer3D.body_add_collision_exception(get_rid(), rid)
 	_inside_bodies = inside
 
+
+## The bodies Kurt passes through by his height: floor-only ones (0x800 + 0x100) while his feet
+## are under their top, wall-only ones (no 0x100) while above it (`damp_collide_move` 0x465e34
+## moves him only in XY against objects; `damp_platform_floor` 0x41d2c4 stands him on platforms).
+func _one_way_bodies() -> Array[RID]:
+	if not _reach_shape:
+		var capsule := _shape.shape as CapsuleShape3D
+		_reach_shape = CapsuleShape3D.new()
+		_reach_shape.radius = capsule.radius + ONE_WAY_REACH
+		_reach_shape.height = capsule.height + ONE_WAY_REACH * 2.0
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _reach_shape
+	query.transform = _shape.global_transform
+	query.collision_mask = MDKObject.FLOOR_ONLY_LAYER | MDKObject.WALL_ONLY_LAYER
+	var bodies: Array[RID] = []
+	for hit in get_world_3d().direct_space_state.intersect_shape(query, 16):
+		var body := hit.collider as CollisionObject3D
+		var shape := body.shape_owner_get_owner(body.shape_find_owner(hit.shape)) as CollisionShape3D
+		var size := (shape.shape as BoxShape3D).size
+		var top := (shape.global_transform * AABB(-size / 2.0, size)).end.y
+		var under := global_position.y < top - TOP_MARGIN
+		var floor_only := body.collision_layer & MDKObject.FLOOR_ONLY_LAYER != 0
+		if under == floor_only and hit.rid not in bodies:
+			bodies.push_back(hit.rid)
+	return bodies
 
 ## Knocks Kurt down when the damage taken recently reaches 5 (see `KNOCKDOWN_DAMAGE`).
 func _update_knock_damage(delta: float) -> void:
