@@ -677,7 +677,7 @@ Order matters; this is the exact order of the code.
 | `A` | `0x4920d4` | ticks in the air (for sounds) |
 | `G` | `0x573c35 & 0x80` | grounded, as left by the previous frame (see "Board attitude") |
 | `E` | | controls enabled: `obj` flag `0x4000000` clear |
-| `I` | `0x5014ec` | turn input: ±4 per key (`0x57eb34` → +4, `0x57eb30` → −4); mouse: `4 × clamp(dx/sens/dt, ±4)`. `I > 0` lowers `S` (clockwise = right), so `0x57eb34` should be "turn right" ❓ (physical keys unconfirmed) |
+| `I` | `0x5014ec` | turn input: 4 × the larger of the turn and strafe keys (`input_read_axes` 0x408334; the strafe on a tie), ±4 °/tick; mouse, when it moved: `4 × clamp(dx/sens/dt, ±4)` (up to 16 °/tick; dx in the walk's units of 3°). `I > 0` lowers `S` (clockwise = right). The port: `MDKSnowboard.turn_input`, `tests/board_steer_test.gd` |
 | `F` | `0x5014f0` | forward input: +0.05 forward, −0.05 back; mouse `−dy·0.05·0.5` |
 | jump / fire | `0x50152c` / `0x501534` | keys |
 

@@ -14,6 +14,10 @@ const TICKS := 30.0
 ## Steering: ±30° at 4°/tick (reached over 15 ticks on the ground), back at 3°/tick.
 const STEER_MAX := 30.0
 const STEER_RATE := 4.0
+## The mouse: 4 × clamp(dx / dt, ±4) °/tick (`input_read_axes` 0x408334), dx in the original's
+## units: its walk turns 3° a unit.
+const MOUSE_DEGREES := 3.0
+const MOUSE_LIMIT := 4.0
 const STEER_RAMP_TICKS := 15.0
 const STEER_RETURN := 3.0
 ## Sideways speed `L = −S·V/96`, braked in the air by 0.0055556 per tick.
@@ -146,10 +150,14 @@ func _position() -> Vector3:
 	return MDKScriptRuntime.to_mdk(_kurt.global_position)
 
 
-## The carve angle `S`: the keys turn it by up to 4°/tick (ramping up over 15 ticks on the
-## ground), the other way snaps it straight, and it goes back at 3°/tick.
+## The carve angle `S`: the turn input (°/tick) turns it (ramping up over 15 ticks on the ground),
+## the other way snaps it straight, and it goes back at 3°/tick.
 func _steer_board(controls: bool, dt: float) -> void:
-	var input := Input.get_axis(&"turn_left", &"turn_right") if controls else 0.0
+	# Mouse motion is used up either way, or Kurt would turn by all of it when he gets off.
+	var mouse: float = -_kurt.take_mouse_turn()
+	var turn := Input.get_axis(&"turn_left", &"turn_right")
+	var strafe := Input.get_axis(&"strafe_left", &"strafe_right")
+	var input := turn_input(mouse, turn, strafe, dt) if controls else 0.0
 	if input == 0.0:
 		_turn_ticks = 0.0
 		_steer = move_toward(_steer, 0.0, STEER_RETURN * dt)
@@ -159,8 +167,17 @@ func _steer_board(controls: bool, dt: float) -> void:
 	if (right and _steer > 0.0) or (not right and _steer < 0.0):
 		_steer = 0.0
 		return
-	var rate := STEER_RATE * (_turn_ticks * 2.0 / TICKS if _grounded and _turn_ticks < STEER_RAMP_TICKS else 1.0)
-	_steer = clampf(_steer - signf(input) * rate * dt, -STEER_MAX, STEER_MAX)
+	var rate := input * (_turn_ticks * 2.0 / TICKS if _grounded and _turn_ticks < STEER_RAMP_TICKS else 1.0)
+	_steer = clampf(_steer - rate * dt, -STEER_MAX, STEER_MAX)
+
+
+## The turn input (°/tick, > 0 right; 0x5014ec): the mouse's 4 × clamp(dx / dt, ±4) when it moved
+## (`mouse`: the walking turn in degrees, > 0 right), else the larger of the turn and strafe keys
+## × 4 (the strafe on a tie). E.g. 1.5° of mouse in a tick: 2°/tick; a flick: 16°/tick.
+static func turn_input(mouse: float, turn: float, strafe: float, dt: float) -> float:
+	if mouse != 0.0 and dt > 0.0:
+		return STEER_RATE * clampf(mouse / MOUSE_DEGREES / dt, -MOUSE_LIMIT, MOUSE_LIMIT)
+	return STEER_RATE * (turn if absf(strafe) < absf(turn) else strafe)
 
 
 ## Speed on the ground: the keys speed up (to 2.5) or brake (to 1.1667), else back to cruise 1.5;

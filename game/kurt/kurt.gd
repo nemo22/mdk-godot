@@ -417,6 +417,13 @@ func jump_off() -> void:
 	_set_state(State.RUN_JUMP)
 
 
+## Returns the mouse turn (degrees, > 0 left) since the last call and clears it (the snowboard).
+func take_mouse_turn() -> float:
+	var turn := _mouse_turn
+	_mouse_turn = 0.0
+	return turn
+
+
 ## Gets off the snowboard, keeping its speeds (u/s) as his walking ones.
 func get_off_board(forward: float, strafe: float) -> void:
 	ride = Callable()
