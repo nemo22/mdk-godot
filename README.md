@@ -1,7 +1,7 @@
 # MDK in Godot
 
 ![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange)
-![Progress: about 88%](https://img.shields.io/badge/progress-~88%25-yellow)
+![Progress: about 88%](https://img.shields.io/badge/progress-~90%25-yellow)
 ![Godot 4.7](https://img.shields.io/badge/Godot-4.7-478cbf?logo=godotengine&logoColor=white)
 
 A port of [MDK](https://en.wikipedia.org/wiki/MDK_(video_game)) (Shiny Entertainment, 1997) to
@@ -16,16 +16,16 @@ files and executable (`MDKD3D.EXE`, the Direct3D version), and it aims to play l
 
 **Status: work in progress.** The six levels load and run with the original scripts, aliens,
 weapons, items, rides and sniper mode, with the falls and streams between them, the briefings,
-statistics and the end videos. It's being played through and its bugs fixed; there's an
-[alpha test build](https://github.com/nemo22/mdk-godot/releases). See [the roadmap](docs/roadmap.md).
+statistics and the end videos. It's being played through and its bugs fixed; there are
+[alpha test builds](https://github.com/nemo22/mdk-godot/releases). See [the roadmap](docs/roadmap.md).
 
 ## Progress
 
 | Area | Done |
 | --- | --- |
 | Data formats, levels, textures, skies, glass, mirrors | ██████████ 98% |
-| Kurt: movement, camera, chute, sliding, ledges, rides | █████████░ 94% |
-| Script VM, aliens, doors, bosses, cutscenes, arenas | █████████░ 94% |
+| Kurt: movement, camera, chute, sliding, ledges, rides | █████████░ 95% |
+| Script VM, aliens, doors, bosses, cutscenes, arenas | █████████░ 96% |
 | Chain gun, items, sniper mode, air strike | █████████░ 92% |
 | HUD, menus (original font and layout), options, key bindings | █████████░ 90% |
 | Sound and music | █████████░ 90% |
@@ -33,13 +33,19 @@ statistics and the end videos. It's being played through and its bugs fixed; the
 | The fall (`FALL3D`) and the stream between levels | █████████░ 90% |
 | Intro and end videos (FLC, MVE) | ██████████ 100% |
 | Enhanced graphics mode (lighting, filtering, shadows, SSAO, fog) | ███████░░░ 70% |
-| Playtesting and bug fixing | ██████░░░░ 60% |
-| **Overall** | **about 88%** |
+| Playtesting and bug fixing | ███████░░░ 70% |
+| **Overall** | **about 90%** |
 
-Recent work: the enhanced graphics mode (Options → Graphics), the original menus, the `XD2` and
-`XE` rides, the gore option, animated delta textures (`M_COMM`), and fixes from playtesting
-(the chute, sniper screen, flickering wall details, walker riding, LEVEL4's lift to `MEAT_7`,
-objects colliding only with their own arena, Kurt dying when he falls out of an arena).
+Recent work (0.10.0 alpha): fixes from playthroughs of every level, many shared with the
+[C# port](https://github.com/nemo22/mdk-sdl). Kurt changes arena only through doorways, doors
+move into his arena, teleports load the corridor behind them, and he rides moving platforms and
+dies falling out of an arena. Objects collide only with their own arena and decide walls and
+floors as the original; animations' root motion collides too (LEVEL4's `MEAT_5` key), objects
+stop at their height offset and probe floors ahead (`if_no_floor_at`). LEVEL4's lift to
+`MEAT_7` and its second board run, the slide, the board's steering, mortar rounds, sniper hits on
+model faces, the chute's sound, fan sparks, coplanar details, glass outlines, system colours,
+the cutscenes' screen flashes (LEVEL5's white veil after freeing Bones) and the fall's
+explosions are fixed. The three levels of the 1996 beta demo play as extras.
 
 ## Screenshots
 
@@ -96,7 +102,8 @@ to look around, Shift to go faster.
 A rewrite of the port in C# on SDL3 has started: [mdk-sdl](https://github.com/nemo22/mdk-sdl). It renders and collides like
 the original (its BSP, as described in [docs/bsp.md](docs/bsp.md)) instead of through Godot's
 renderer and physics, and builds into a single native executable. It reuses this repository's
-knowledge base; so far Kurt walks the levels, without aliens or scripts.
+knowledge base; every level runs with its scripts and the game can be played through. Fixes
+found in either port are carried over to the other.
 
 ## Layout
 
