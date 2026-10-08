@@ -1,8 +1,14 @@
 # MDK in Godot
 
-![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange)
+![Status: no longer developed](https://img.shields.io/badge/status-no%20longer%20developed-lightgrey)
 ![Progress: about 88%](https://img.shields.io/badge/progress-~90%25-yellow)
 ![Godot 4.7](https://img.shields.io/badge/Godot-4.7-478cbf?logo=godotengine&logoColor=white)
+
+> [!WARNING]
+> **This Godot port is no longer actively developed.** The primary port is its successor,
+> [mdk-sdl](https://github.com/nemo22/mdk-sdl) (C# and SDL3; Windows, Linux, macOS, Android; HD
+> textures; [screenshots](https://github.com/nemo22/mdk-sdl#screenshots)). This repository stays
+> for its reverse-engineering docs ([docs/](docs/)), which mdk-sdl uses.
 
 A port of [MDK](https://en.wikipedia.org/wiki/MDK_(video_game)) (Shiny Entertainment, 1997) to
 [Godot 4.7](https://godotengine.org/). It's based on reverse engineering the original game's data
