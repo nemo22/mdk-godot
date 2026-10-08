@@ -44,6 +44,9 @@ const FLAG_SWINGING := 0x400000
 const FLAG_BOUNCES := 0x20000000
 ## The holy cow of `SW_EWJ` (0x440074).
 const FLAG_COW := 0x40000000
+## The animation's root motion doesn't move it (obj+0x14b bit 7; anim_step_frames 0x43ab70), e.g.
+## Gunter on his pillar.
+const FLAG_NO_ROOT_MOTION := 0x80000000
 const FLAG_PATH_ONCE := 0x400
 ## The path speed follows Kurt's distance ahead (opcode 164).
 const FLAG_PATH_SPEED_BY_KURT := 0x10000000
@@ -367,6 +370,8 @@ func advance_animation(delta: float) -> void:
 	if frame != animation_frame:
 		# Root motion: the object moves by the animation's motion of each frame (model space).
 		var step := frame - animation_frame if frame > animation_frame else frame + frame_count - animation_frame
+		if flags & FLAG_NO_ROOT_MOTION:
+			step = 0
 		for i in step:
 			var f := (animation_frame + 1 + i) % frame_count
 			mdk_position += animation.root_motion[f].rotated(Vector3.BACK, deg_to_rad(yaw))

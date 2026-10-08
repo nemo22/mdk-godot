@@ -254,7 +254,9 @@ Hermite curve: with `u = (t − frame_i) / (frame_{i+1} − frame_i)`, `d = p1 �
   (flag 0x8, opcode 59) wrap at the frame count; the others stop on the last frame, and
   `obj+0x118` becomes 0xFF00 (ended, tested by `if_anim_done`).
 - `obj+0x118` ≥ 0 is a hold frame (opcode 118): the animation stops there.
-- Frames are stepped one by one (`anim_step_frames`) and each frame's root motion moves the object.
+- Frames are stepped one by one (`anim_step_frames`) and each frame's root motion moves the object,
+  unless it has flag 0x80000000 (`obj+0x14b` bit 7): LEVEL5's Gunter (`XGUNTAM`) keeps his place on
+  the `MUSE_4` pillar while taunting; his death script clears the flag, so his fall moves him.
 - A sound can be attached to a frame (opcode 24: name `obj+0x140`, frame `obj+0x144`).
 
 ### Commands between objects (`command_objects` 0x440384)
