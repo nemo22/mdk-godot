@@ -774,7 +774,11 @@ exist for groups 1–16). Scripts change groups at run time:
 
 - `group_set_state` (98) sets or clears triangle flags **0x10** (not drawn: skipped by the draw list
   0x40acc8) and **0x20** (not solid: skipped by the BSP collision `bsp_leaf_tri_test`). No triangle
-  has them set in the data. Arena scripts use this to hide rooms Kurt isn't in (level 5
+  has them set in the data, but the arena's activation (`0x40d46c(a, 1)`, after
+  `arena_parse_world`) sets both on every triangle with flag **0x2** ✅: all in group 0, so they
+  stay hidden and passable (the `NONE` walls, a few `BLACK`/`PEN_255`/floor triangles; LEVEL8
+  GUNT_2's `NONE` triangle cuts the floor diagonally). Arena scripts use this to hide rooms Kurt
+  isn't in (level 5
   `MUSE_1`), for destructible parts, bridges…
 - `group_set_texture` (140) gives every triangle of a group another material.
 - `group_set_hit_flags` (168) and `group_on_hit` (99) make groups react to hits: flag 0x80 makes a

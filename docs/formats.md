@@ -183,7 +183,8 @@ track:
    - `flags`: top byte = triangle group (see [engine.md](engine.md#arena-triangle-groups));
      0x10 not drawn and 0x20 not solid (set only by scripts); bit 23 outlines the triangle in its
      colour along the edges bits 20 (v0–v1), 21 (v1–v2) and 22 (v2–v0) pick (see "Special
-     materials"); bit 0 ❓.
+     materials"); 0x2 is made hidden and not solid by the arena's activation (0x40d46c, see
+     [engine.md](engine.md#arena-triangle-groups)); bit 0 ❓.
 4. `u32 count`, then vertices `f32 x, y, z` in world coordinates.
 5. `u32` ❓, then BSP leaf data ❓.
 
@@ -224,7 +225,8 @@ other (-256, -257, -989..-257, -1023..-1011): flat palette[(-m) & 0xff]
   the level 5/6 MTI, never referenced by a triangle.
 - A named palette material has no texture: D3D draws it with palette[1] (0x471290 `m >= 0`,
   texture null), software fills colour 0xFF after a debug print (0x40c8e2). So `NONE` triangles
-  are not "invisible" in the engine ❓; they're probably never seen (flags 3 ❓). Port: keep skipping.
+  are not "invisible" in the engine by material; their flag 0x2 (flags 2 or 3) makes them hidden and
+  not solid at the arena's activation (0x40d46c) ✅. Port: skips every flag-0x2 triangle.
 
 ### Mirrors (990–1010) ✅
 

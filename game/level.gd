@@ -8,6 +8,10 @@ const CONNECTION := 6
 ## Triangle flags changed by scripts (`group_set_state`): hidden, and not solid.
 const TRIANGLE_HIDDEN := 0x10
 const TRIANGLE_NOT_SOLID := 0x20
+## Triangles the original's arena activation (0x40d46c(a,1)) makes hidden and not solid, all in
+## group 0 (NONE walls, stray floors; LEVEL8 GUNT_2's invisible diagonal wall). The 1996 demo's clip
+## flag instead.
+const TRIANGLE_DISABLED := 0x2
 ## The enhanced look's sun (pitch, yaw in degrees), its strength, the light from the sky, how far
 ## shadows reach, how much glows and how thick the haze is.
 const SUN_ANGLES := Vector3(-55.0, 35.0, 0.0)
@@ -153,7 +157,7 @@ func load_level(p_number: int) -> void:
 		var groups := {}
 		var clip := MDKBeta.get_clip_triangles(arena) if beta else PackedInt32Array()
 		for tri in arena.triangle_flags.size():
-			if clip.has(tri):
+			if clip.has(tri) or (not beta and arena.triangle_flags[tri] & TRIANGLE_DISABLED):
 				continue
 			var group_number := (arena.triangle_flags[tri] >> 24) & 0xFF
 			if not groups.has(group_number):
