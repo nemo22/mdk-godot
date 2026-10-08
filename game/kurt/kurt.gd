@@ -484,6 +484,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	invulnerable = maxf(invulnerable - delta, 0.0)
 	if frozen:
+		# Cutscenes and the level's end: the flashes still fade (0x478704).
+		hurt_flash = maxf(hurt_flash - 4.0 * TICKS * delta, 0.0)
+		white_flash = maxf(white_flash - 4.0 * TICKS * delta, 0.0)
 		_stop_chute_sound()
 		velocity = Vector3.ZERO
 		return
