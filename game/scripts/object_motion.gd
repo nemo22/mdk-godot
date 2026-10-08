@@ -690,6 +690,14 @@ func _sweep(obj: MDKObject, motion: Vector3) -> Variant:
 	var half := Vector3((c * size.x + s * size.y) * 0.25, (s * size.x + c * size.y) * 0.25, maxf(bounds.end.z * obj.model_scale + obj.get_lift(), 0.5) * 0.5)
 	var center := bounds.get_center().rotated(Vector3.BACK, deg_to_rad(obj.yaw)) * obj.model_scale
 	center.z = half.z + (0.05 if motion.z != 0.0 else 0.5)
+
+	# A vertical move reaches down to z - height offset, so the object stops that high above the
+	# floor (0x45e810), e.g. LEVEL8's centred XT 8 above. Rolling objects are drawn lifted instead.
+	if motion.z != 0.0:
+		var drop := obj.height_offset - obj.get_lift()
+		half.z += drop * 0.5
+		center.z -= drop * 0.5
+
 	_box.size = Vector3(half.x, half.z, half.y) * 2.0
 	if not _probe.is_valid():
 		_create_probe()

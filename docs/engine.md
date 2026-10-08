@@ -111,7 +111,12 @@ walkers). 0x1, 0x2 and 0x10 are cleared at the start of each velocity step.
   (`bsp_sweep_box`, the same as Kurt's, see [gameplay.md](gameplay.md#collision-damp_collide_move-bsp_sweep_box)).
   The box is half as wide as the object's world bounds (`obj+0x198`: half extents = size × 0.25) and
   as high as half the distance from the origin to the top of the bounds, starting 0.05 above the
-  origin when moving vertically (0.5 otherwise). On a hit: `vz = 0` (or the velocity is reflected
+  origin when moving vertically (0.5 otherwise). 0x45e810 sweeps twice: the horizontal motion with
+  that box 0.5 above the origin, then the vertical one with its bottom lowered to z − height offset
+  (`obj+0x5c`, opcode 84), so an object stops that high above the floor: LEVEL8 GUNT_5's centred
+  `XT` (offset 8) stands on the floor, not half in it (`tests/height_offset_test.gd`; the port
+  lowers the box of any vertical move, but not for rolling objects: drawn lifted by the offset
+  (0x43b65c), LEVEL6's boulders would float with both ❓). On a hit: `vz = 0` (or the velocity is reflected
   with factor −1.8 along the normal when bouncing), the hit triangle is kept (`obj+0x2b0`, used by
   conveyors), and triangle-group hit scripts may run (0x40d560). Without flag 0x4 objects move
   freely, only clamped to an optional box (`obj+0x27c`…`obj+0x290`).
