@@ -631,6 +631,17 @@ chain gun only at 0 hit points, and from the floor the turrets are beyond its re
 gone the ship falls, rolling, and explodes. Sniper rounds test the parts' faces, so the hull's box
 doesn't hide the turrets ✅.
 
+Example: level 8's forklift puzzle (`GUNT_2`). The first `XFORK` (script 0x4b0c) drives a path; any
+hit sends it into the turret garage `XPER` (-383, 525, 18), which rises and fires. The `XPER`'s death
+script (0x52b3) deletes it and spawns a new `XFORK` with a driver (0x4bc6, health 1110) that drives at
+Kurt. Below 1000 hit points the driver `XFK_HEAD` and the canopy blow off; from then on each hit
+gives it 1000 back and pushes it along the shot (`push_hit_dir`: 50 units/s for a part hit, 80 × dt
+for the chain gun), so it can't be killed but can be pushed. While it (or Kurt) is on the yellow pad
+(-435..-414, 547..568, z 7..9) the glass (group 1) over the way down is hidden; Kurt alone hides it
+only once a forklift runs that check. While the garage is closed it hovers 4 units over the blue
+floor; its box (the hull's pose box turned by its yaw, 0x43f370) stops Kurt there and on the pad's
+east edge ✅. Test `tests/forklift_test.gd`.
+
 ### Death
 
 `object_kill` (0x43d6d4 → 0x43d670): the object switches to its death script (`obj+0x110`, set by
