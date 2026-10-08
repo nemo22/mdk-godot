@@ -6122,7 +6122,7 @@
    }
   ],
   "flow": "branch",
-  "summary": "Condition: no floor below the object-local point (dx,dy) (rotated by yaw) within depth (a default depth if 0).",
+  "summary": "Condition: no up-facing face (|nz| >= 0.5, 0x421708) of the object's own arena between 3 above and 3 below the point (x - dx*cos - dy*sin, y - dy*cos - dx*sin) (as add_vel_local: -dx is ahead), or down to z + depth if depth != 0 (0x46046c). Platform objects don't count: LEVEL8 GUNT_10's XG turns at the centre hole X10_CAP covers.",
   "fields": [
    "obj+0x10",
    "obj+0x4c",

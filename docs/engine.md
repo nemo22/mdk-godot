@@ -120,6 +120,9 @@ walkers). 0x1, 0x2 and 0x10 are cleared at the start of each velocity step.
   with factor −1.8 along the normal when bouncing), the hit triangle is kept (`obj+0x2b0`, used by
   conveyors), and triangle-group hit scripts may run (0x40d560). Without flag 0x4 objects move
   freely, only clamped to an optional box (`obj+0x27c`…`obj+0x290`).
+  Other objects never stop it, platforms (0x100) included: LEVEL8 GUNT_10's `X10_CAP` covers the
+  centre hole for Kurt only, an `XG` keeps out by its edge checks (`if_no_floor_at`,
+  `tests/no_floor_test.gd`).
   Only the object's own arena counts: LEVEL5's key falls through the overlapping CMUSE_4 onto
   MUSE_5's floor. The sweep never pushes a box out of an overlap: a pose growing into a wall
   doesn't move the object (LEVEL7's `SW_H150`). The port uses `body_test_motion` with the other

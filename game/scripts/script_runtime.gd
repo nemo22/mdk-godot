@@ -1953,6 +1953,33 @@ func raycast(from: Vector3, to: Vector3, faces := Faces.BOTH) -> Dictionary:
 	return {}
 
 
+## Whether a segment crosses an up-facing face (normal z >= 0.5) of one arena (0x421708): the
+## scripts' floor probe, which other arenas and objects (platforms) don't stop.
+func crosses_floor(arena_name: String, from: Vector3, to: Vector3) -> bool:
+	const FLOOR_NZ := 0.5
+	const STEP := 0.01
+	var start := MDKMeshBuilder.to_godot(from)
+	var end := MDKMeshBuilder.to_godot(to)
+	var query := PhysicsRayQueryParameters3D.create(start, end, LEVEL_LAYER)
+	query.hit_back_faces = false
+	var space := get_world_3d().direct_space_state
+	var exclude: Array[RID] = level.clip_rids.duplicate()
+	for i in RAY_ARENAS_MAX:
+		query.exclude = exclude
+		var hit := space.intersect_ray(query)
+		if hit.is_empty():
+			return false
+		if hit.collider.get_meta(&"arena", "") != arena_name:
+			exclude.push_back(hit.rid)
+			continue
+		if hit.normal.y >= FLOOR_NZ:
+			return true
+
+		# A steep face: go on below it.
+		query.from = hit.position + (end - start).normalized() * STEP
+	return false
+
+
 ## Destination near the target (`move_near_target`): the target position offset by `forward` and
 ## `side` × 1% of the distance, in the frame of the direction from `obj` to the target.
 func near_target_destination(obj: MDKObject, forward: float, side: float) -> Vector3:

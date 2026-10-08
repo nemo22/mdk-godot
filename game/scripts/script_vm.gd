@@ -771,11 +771,19 @@ func _execute(obj: MDKObject, ins: MDKScriptDecoder.Instruction) -> int:
 			return _branch(obj, ins, _compare(_opcode_count, o[0]))
 		231:  # if_move_idle_flag: the movement gave up (stuck, `MDKObjectMotion._handle_stuck`)
 			return _branch(obj, ins, obj.move_command == 0 and obj.stuck_count != 0)
-		236:  # if_no_floor_at: no floor below a point in front of the object
-			var offset := Vector2(o[0], o[1]).rotated(deg_to_rad(obj.yaw))
-			var depth: float = o[2] if o[2] != 0.0 else 10.0
-			var point := obj.mdk_position + Vector3(offset.x, offset.y, 1.0)
-			return _branch(obj, ins, runtime.raycast(point, point - Vector3(0, 0, depth + 1.0)).is_empty())
+		236:  # if_no_floor_at: no up-facing face of its arena below a point (0x46046c)
+			# From 3 above the point down to 3 below it (or to z + depth). The offset turns like
+			# add_vel_local's: -dx is ahead (the XG's -20 checks 20 units in front).
+			const PROBE_TOP := 3.0
+			const DEFAULT_DROP := 6.0
+			var dx: float = o[0]
+			var dy: float = o[1]
+			var depth: float = o[2]
+			var c := cos(deg_to_rad(obj.yaw))
+			var s := sin(deg_to_rad(obj.yaw))
+			var top := obj.mdk_position + Vector3(-dx * c - dy * s, -dy * c - dx * s, PROBE_TOP)
+			var bottom := obj.mdk_position.z + depth if depth != 0.0 else top.z - DEFAULT_DROP
+			return _branch(obj, ins, not runtime.crosses_floor(obj.arena, top, Vector3(top.x, top.y, bottom)))
 		189:  # lob_to_kurt: throw itself so that it lands on Kurt (or at a height)
 			var args: Array = o[0]
 			if args[0] <= 1:
