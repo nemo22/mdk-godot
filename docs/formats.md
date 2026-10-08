@@ -39,6 +39,9 @@ file offset 4 (the internal name).
 
 An arena's 256-color palette (8-bit RGB triplets) is the DTI palette with indices 64–175 replaced
 by the arena's 112 colors (`arena_load_step`). The DTI palette has magenta placeholders there.
+Indices 0–63 are the system colors (`SYS_PAL`, copied to `0x5735e4` at startup): a level's load
+(0x41ba68) copies only the DTI's 64–255. LEVEL8's DTI has magenta and purple at 10–12 (orange and
+reds in `SYS_PAL`), never shown.
 Index 0 is forced to black and is transparent in sprites. Sprites (`BNI`) only use indices 0–63.
 
 ## DTI (level data) 🟡

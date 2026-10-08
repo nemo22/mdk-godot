@@ -38,6 +38,17 @@ func with_arena_colors(arena_rgb: PackedByteArray) -> MDKPalette:
 	return palette
 
 
+## Returns a copy of this palette with the system colors (`SYS_PAL`) at indices 1–63; 0 stays black.
+func with_system_colors(system_rgb: PackedByteArray) -> MDKPalette:
+	var palette := MDKPalette.new()
+	palette.rgba8 = rgba8.duplicate()
+	for index in range(1, mini(ARENA_FIRST_INDEX, system_rgb.size() / 3)):
+		palette.rgba8[index * 4] = system_rgb[index * 3]
+		palette.rgba8[index * 4 + 1] = system_rgb[index * 3 + 1]
+		palette.rgba8[index * 4 + 2] = system_rgb[index * 3 + 2]
+	return palette
+
+
 func get_color(index: int) -> Color:
 	return Color8(rgba8[index * 4], rgba8[index * 4 + 1], rgba8[index * 4 + 2])
 

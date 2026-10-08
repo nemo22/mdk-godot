@@ -12,6 +12,9 @@ const TRIANGLE_NOT_SOLID := 0x20
 ## group 0 (NONE walls, stray floors; LEVEL8 GUNT_2's invisible diagonal wall). The 1996 demo's clip
 ## flag instead.
 const TRIANGLE_DISABLED := 0x2
+## The system colours (palette 0–63) a level keeps.
+const SYSTEM_FILE := "MISC/MDKFONT.FTI"
+const SYSTEM_PALETTE := "SYS_PAL"
 ## The enhanced look's sun (pitch, yaw in degrees), its strength, the light from the sky, how far
 ## shadows reach, how much glows and how thick the haze is.
 const SUN_ANGLES := Vector3(-55.0, 35.0, 0.0)
@@ -105,6 +108,10 @@ func load_level(p_number: int) -> void:
 		sound_archives = MDKBeta.load_sounds(beta)
 	else:
 		dti = MDKDti.load_file(MDKData.path(dir + "LEVEL%d.DTI" % number))
+		# Colours 0–63 stay the system's (0x41ba68 copies only the DTI's 64–255): LEVEL8's DTI has
+		# magenta and purple at 10–12, for its aliens' glow, its shots and the grenade's icon.
+		var system := MDKFti.load_file(MDKData.path(SYSTEM_FILE)).get_bytes(SYSTEM_PALETTE)
+		dti.palette = dti.palette.with_system_colors(system)
 		mto = MDKMto.load_file(MDKData.path(dir + "LEVEL%dO.MTO" % number))
 		level_textures = MDKTextureArchive.load_file(MDKData.path(dir + "LEVEL%dS.MTI" % number), MDKTextureArchive.Zero.BY_KIND)
 		cmi = MDKCmi.load_file(MDKData.path(dir + "LEVEL%d.CMI" % number))
