@@ -39,6 +39,7 @@ const PICKUP_FALL_SPEED := 2 * KURT_SPEED
 const PICKUP_CHUTE_SPEED := 50.0
 const BONES_SPEED := 2000.0 / 27.0
 const EXPLOSION_TICKS := 26
+const ON_TOP_SHADER := preload("res://game/fall/fall_on_top.gdshader")
 ## Blend towards white of the haze tables 1–24 (0x490d1c, / 256).
 const HAZE_BLEND := [0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 12, 18, 24, 48, 72, 96, 120, 144, 168, 192, 215, 230, 245, 255]
 const WIND_FULL := 0xC00
@@ -378,6 +379,20 @@ func _make_node(model_name: String) -> MeshInstance3D:
 	node.mesh = _get_mesh(model_name)
 	_world.add_child(node)
 	return node
+
+
+## Draws a node over everything, as the original sorts explosions at camera z + 5 (0x411aa4).
+func _draw_on_top(node: MeshInstance3D) -> void:
+	for i in node.mesh.get_surface_count():
+		var material := node.mesh.surface_get_material(i).duplicate() as Material
+		if material is ShaderMaterial:
+			(material as ShaderMaterial).shader = ON_TOP_SHADER
+		else:
+			var standard := material as StandardMaterial3D
+			standard.no_depth_test = true
+			standard.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.render_priority = Material.RENDER_PRIORITY_MAX
+		node.set_surface_override_material(i, material)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -745,6 +760,7 @@ func _hit(missile: FallMissile) -> void:
 	var explosion := Thing.new()
 	explosion.position = missile.position
 	explosion.node = _make_node("EXPLODE")
+	_draw_on_top(explosion.node)
 	# A random yaw.
 	explosion.velocity.x = randf() * TAU
 	_explosions.push_back(explosion)
