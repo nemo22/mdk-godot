@@ -12,6 +12,13 @@ extends RefCounted
 
 const KIND_COLOR := 0xFFFFFFFF
 const KIND_ANIMATED_MASK := 0xFFFF0000
+## Uploaded with alpha: index 0 see-through (0x474c9c; the effects: `EXPLODE`, `TRAIL`…).
+const KIND_KEYED := 1
+## Palette black (`BLACK`), standing in for index 0 where it's opaque.
+const OPAQUE_BLACK := 16
+
+## Palette index 0: see-through everywhere, or only in textures of kind bit 0.
+enum Zero { SEE_THROUGH, BY_KIND }
 
 ## Name to MDKTexture (including animated textures).
 var textures := {}
@@ -21,7 +28,7 @@ var colors := {}
 
 ## `header` is the size of the name and size before the count: 16, or 0 in the 1996 demo's
 ## archives (`MDKBeta`), whose names are in lower case.
-static func parse(bytes: PackedByteArray, base: int, header := 16) -> MDKTextureArchive:
+static func parse(bytes: PackedByteArray, base: int, header := 16, zero := Zero.SEE_THROUGH) -> MDKTextureArchive:
 	var archive := MDKTextureArchive.new()
 	var r := BinReader.new(bytes, base + header)
 	var count := r.u32()
@@ -36,13 +43,24 @@ static func parse(bytes: PackedByteArray, base: int, header := 16) -> MDKTexture
 		elif kind & KIND_ANIMATED_MASK:
 			archive.textures[entry_name] = MDKTexture.parse_animated(entry_name, bytes, base + offset, kind)
 		else:
-			archive.textures[entry_name] = MDKTexture.parse(entry_name, bytes, base + offset)
+			var texture := MDKTexture.parse(entry_name, bytes, base + offset)
+			archive.textures[entry_name] = texture
+			# LEVEL8's walls paint black with index 0 (`I2_WALL1`): opaque unless keyed.
+			if zero == Zero.BY_KIND and not kind & KIND_KEYED:
+				_make_opaque(texture)
 	return archive
 
 
-static func load_file(path: String) -> MDKTextureArchive:
+static func _make_opaque(texture: MDKTexture) -> void:
+	var at := texture.indices.find(0)
+	while at >= 0:
+		texture.indices[at] = OPAQUE_BLACK
+		at = texture.indices.find(0, at + 1)
+
+
+static func load_file(path: String, zero := Zero.SEE_THROUGH) -> MDKTextureArchive:
 	var bytes := FileAccess.get_file_as_bytes(path)
 	if bytes.is_empty():
 		push_error("Couldn't read %s" % path)
 		return null
-	return parse(bytes, 4)
+	return parse(bytes, 4, 16, zero)

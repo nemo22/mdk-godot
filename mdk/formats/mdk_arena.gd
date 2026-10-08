@@ -45,7 +45,7 @@ static func parse(p_name: String, bytes: PackedByteArray, offset: int) -> MDKAre
 	var section_palette := buf + bytes.decode_u32(buf + 4)
 	var section_world := buf + bytes.decode_u32(buf + 8)
 	arena.palette_rgb = bytes.slice(section_palette, section_palette + 112 * 3)
-	arena.textures = MDKTextureArchive.parse(bytes, buf + 0x10)
+	arena.textures = MDKTextureArchive.parse(bytes, buf + 0x10, 16, MDKTextureArchive.Zero.BY_KIND)
 	arena._parse_world(bytes, section_world)
 	arena._parse_models(bytes, section_models + 4)
 	return arena

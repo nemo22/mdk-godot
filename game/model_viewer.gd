@@ -23,7 +23,7 @@ func _ready() -> void:
 	var dir := "TRAVERSE/LEVEL%d/" % level
 	var dti := MDKDti.load_file(MDKData.path(dir + "LEVEL%d.DTI" % level))
 	var mto := MDKMto.load_file(MDKData.path(dir + "LEVEL%dO.MTO" % level))
-	var level_textures := MDKTextureArchive.load_file(MDKData.path(dir + "LEVEL%dS.MTI" % level))
+	var level_textures := MDKTextureArchive.load_file(MDKData.path(dir + "LEVEL%dS.MTI" % level), MDKTextureArchive.Zero.BY_KIND)
 	var arena_name: String = args.get("arena", mto.get_arena_names()[0])
 	var arena := mto.get_arena(arena_name)
 	var palette := dti.palette.with_arena_colors(arena.palette_rgb)

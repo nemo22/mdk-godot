@@ -102,7 +102,7 @@ func load_level(p_number: int) -> void:
 	else:
 		dti = MDKDti.load_file(MDKData.path(dir + "LEVEL%d.DTI" % number))
 		mto = MDKMto.load_file(MDKData.path(dir + "LEVEL%dO.MTO" % number))
-		level_textures = MDKTextureArchive.load_file(MDKData.path(dir + "LEVEL%dS.MTI" % number))
+		level_textures = MDKTextureArchive.load_file(MDKData.path(dir + "LEVEL%dS.MTI" % number), MDKTextureArchive.Zero.BY_KIND)
 		cmi = MDKCmi.load_file(MDKData.path(dir + "LEVEL%d.CMI" % number))
 		overlays = MDKSni.load_file(MDKData.path(dir + "LEVEL%dO.SNI" % number))
 		sound_archives = [MDKSni.load_file(MDKData.path("TRAVERSE/TRAVERSE.SNI")),

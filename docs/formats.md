@@ -365,8 +365,12 @@ game). Elsewhere (the fall, the stream, the statistics, the model viewer) placeh
 
 ## Texture archive (MAT/MTI) ✅
 
-Palette index 0 is transparent: only effect textures use it (`EXPLODE`, `FIRE`, `TRAIL`, `BUBB`,
-`SB_*`, `SL_*`, `PULSE`…), like sprites.
+Palette index 0 is transparent only in textures whose `kind` has bit 0 (`EXPLODE`, `TRAIL`, `BUBB`,
+`SB_*`, `SL_*`): D3D uploads those with alpha (0x474c9c: `texture+0xc` & 1, if the device has an
+alpha format), the others opaque, index 0 then palette black. LEVEL8's arena textures paint black
+with it (13–40 % of `I2_WALL1`, `I2_FSHAF`, `I2_ENT`…; no other level's still textures use it but
+`BULLET`). Port: `MDKTextureArchive.Zero.BY_KIND` turns index 0 into `BLACK` (16) in still textures
+without bit 0 (arena and level archives); animated ones (`FIRE`, `PULSE`, `SW_EWJ`) keep it ❓.
 
 An arena's `HMO_n.MAT` or a level's `LEVELnS.MTI` (offsets relative to the internal name):
 `char[12] name, u32 size, u32 count`, then 24-byte entries:
