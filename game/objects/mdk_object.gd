@@ -368,13 +368,15 @@ func advance_animation(delta: float) -> void:
 			animation_time = frame_count - 1
 	var frame := roundi(animation_time) % frame_count
 	if frame != animation_frame:
-		# Root motion: the object moves by the animation's motion of each frame (model space).
+		# Root motion: each passed frame's motion (model space) joins the push, so the next tick's
+		# move collides with the arena (anim_step_frames 0x43ab70): a pose doesn't sink it through
+		# the floor.
 		var step := frame - animation_frame if frame > animation_frame else frame + frame_count - animation_frame
 		if flags & FLAG_NO_ROOT_MOTION:
 			step = 0
 		for i in step:
 			var f := (animation_frame + 1 + i) % frame_count
-			mdk_position += animation.root_motion[f].rotated(Vector3.BACK, deg_to_rad(yaw))
+			push += animation.root_motion[f].rotated(Vector3.BACK, deg_to_rad(yaw)) / delta
 		animation_frame = frame
 		_update_mesh()
 	if animation_frame == frame_count - 1 and not flags & FLAG_LOOP and animation_frame != animation_end_frame:
