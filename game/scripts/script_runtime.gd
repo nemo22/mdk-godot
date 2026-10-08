@@ -157,6 +157,8 @@ var _animations := {}
 var _resolvers := {}
 var _next_instance := 1000
 var _previous_kurt_position := Vector3()
+## A teleport into an arena set the previous position before the first tick.
+var _teleported := false
 ## Kurt's velocity in units per second, measured over the last tick.
 var kurt_velocity := Vector3()
 ## `camera_track` (opcode 203): the camera pitch the scripts want (`0x573918`), for this many more
@@ -280,6 +282,7 @@ func teleport_kurt(arena_name: String, mdk_position: Vector3, yaw: float) -> voi
 		show_arena(arena_name)
 		# No move crosses a connection (0x41bce4 sets 0x5739cc too).
 		_previous_kurt_position = mdk_position
+		_teleported = true
 	kurt.teleport(MDKMeshBuilder.to_godot(mdk_position), deg_to_rad(yaw - 90.0))
 	if arena_name.is_empty():
 		kurt.white_flash = maxf(kurt.white_flash, 255.0)
@@ -576,8 +579,8 @@ func _tick() -> void:
 		town_ticks -= 1
 		if town_ticks == 0:
 			_flatten_town()
-	# The first tick (also after loading a game) has no move.
-	if _tick_count == 0:
+	# The first tick (also after loading a game) has no move, unless a teleport set where it starts.
+	if _tick_count == 0 and not _teleported:
 		_previous_kurt_position = kurt_position
 	# Kurt changes arena only through a connection of his (0x41c550); a teleport puts him anywhere.
 	# The 1996 demo's connections have no direction: there his arena comes from the arena boxes.
